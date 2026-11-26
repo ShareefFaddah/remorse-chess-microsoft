@@ -1,0 +1,1745 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#14100e">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>Remorse Chess</title>
+<style>
+@font-face{font-family:'Cormorant Garamond';font-style:normal;font-weight:600;font-display:swap;src:url(fonts/cormorant-garamond-latin-600-normal.woff2) format('woff2')}
+@font-face{font-family:'Inter';font-style:normal;font-weight:400;font-display:swap;src:url(fonts/inter-latin-400-normal.woff2) format('woff2')}
+@font-face{font-family:'Inter';font-style:normal;font-weight:500;font-display:swap;src:url(fonts/inter-latin-500-normal.woff2) format('woff2')}
+@font-face{font-family:'Inter';font-style:normal;font-weight:600;font-display:swap;src:url(fonts/inter-latin-600-normal.woff2) format('woff2')}
+</style>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" type="image/png" sizes="48x48" href="icons/favicon-48.png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<meta name="description" content="Remorse Chess: chess where every capture leaves a mark on the piece that made it.">
+</head>
+<body>
+<style>
+/* Layout: one-screen phone app. Header, opponent strip, square board, player strip,
+   chronicle (last three events), action slot, five-button bar. Sheets slide up for menus. */
+:root {
+  --ink: #14100e;
+  --panel: #1e1714;
+  --panel-2: #2a211d;
+  --line: #3b2f29;
+  --bone: #ece1c9;
+  --ash: #a39786;
+  --ember: #d04a37;
+  --halo: #e2b657;
+  --sq-light: #d9c7a4;
+  --sq-dark: #7a5a43;
+  --f-display: 'Cormorant Garamond', Georgia, 'Times New Roman', serif;
+  --f-body: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --gutter: 16px;
+  color-scheme: dark;
+}
+html { box-sizing: border-box; height: 100%; }
+*, *::before, *::after { box-sizing: inherit; }
+body {
+  height: 100%; margin: 0; background: var(--ink); color: var(--bone);
+  font: 15px/1.4 var(--f-body); overflow: hidden; overscroll-behavior: none;
+  -webkit-tap-highlight-color: transparent; -webkit-user-select: none; user-select: none;
+  touch-action: manipulation;
+}
+button { font: inherit; color: inherit; cursor: pointer; }
+button:focus-visible, .sq:focus-visible { outline: 2px solid var(--halo); outline-offset: 2px; }
+
+#app {
+  height: 100%; max-width: 520px; margin: 0 auto; display: flex; flex-direction: column;
+  padding-left: max(var(--gutter), env(safe-area-inset-left, 0px));
+  padding-right: max(var(--gutter), env(safe-area-inset-right, 0px));
+  padding-block: 4px 0;
+}
+.top { display: flex; flex-direction: column; gap: 3px; padding: 6px 2px 8px; }
+h1 { margin: 0; font: 600 30px/1 var(--f-display); letter-spacing: .01em; white-space: nowrap; }
+.tag { margin: 0; font-size: 11px; letter-spacing: .12em; text-transform: uppercase; color: var(--ash); white-space: nowrap; }
+
+/* player strips */
+.strip { display: flex; align-items: center; gap: 9px; height: 42px; padding: 0 10px; border-radius: 10px; border: 1px solid transparent; transition: background .2s; }
+.strip.on { background: var(--panel); border-color: var(--line); }
+.chip { width: 15px; height: 15px; border-radius: 50%; flex: none; border: 2px solid; }
+.chip.w { background: #f3ead5; border-color: #8c7a63; }
+.chip.b { background: #2c2125; border-color: #8c7a63; }
+.nm { font-weight: 600; }
+.sub { color: var(--ash); font-size: 13px; }
+.think { color: var(--halo); font-size: 13px; }
+.think i { animation: blink 1.2s infinite; font-style: normal; }
+.think i:nth-child(2) { animation-delay: .2s; } .think i:nth-child(3) { animation-delay: .4s; }
+@keyframes blink { 0%, 60%, 100% { opacity: .2 } 30% { opacity: 1 } }
+.stats { margin-left: auto; display: flex; gap: 12px; align-items: center; font-size: 13px; font-variant-numeric: tabular-nums; }
+.st { display: inline-flex; align-items: center; gap: 4px; color: var(--ash); }
+.st.warn { color: var(--ember); }
+.mini { width: 19px; height: 19px; fill: var(--bone); stroke: var(--ash); stroke-width: 1.6; stroke-linejoin: round; }
+.dot { width: 11px; height: 11px; border-radius: 50%; background: #1a1010; box-shadow: 0 0 0 1.5px var(--ember); }
+
+/* board */
+#boardwrap { position: relative; width: min(100%, calc(100dvh - 365px)); min-width: 240px; margin: 4px auto; flex: none; }
+#board {
+  display: grid; grid-template-columns: repeat(8, 1fr); grid-template-rows: repeat(8, 1fr);
+  aspect-ratio: 1; border-radius: 6px; overflow: hidden; box-shadow: 0 0 0 2px #0b0807, 0 10px 28px rgba(0, 0, 0, .55);
+}
+.sq { position: relative; min-width: 0; min-height: 0; }
+.sq.light { background: var(--sq-light); } .sq.dark { background: var(--sq-dark); }
+.sq.last::before { content: ""; position: absolute; inset: 0; background: rgba(226, 182, 87, .38); z-index: 1; }
+.sq.sel::after { content: ""; position: absolute; inset: 0; box-shadow: inset 0 0 0 3px var(--halo); background: rgba(226, 182, 87, .28); z-index: 1; }
+.sq.chk { background-image: radial-gradient(circle at 50% 55%, rgba(208, 74, 55, .95) 0%, rgba(208, 74, 55, 0) 72%); }
+.rk, .fl { position: absolute; font-size: 9px; font-weight: 700; z-index: 1; line-height: 1; pointer-events: none; }
+.rk { top: 3px; left: 3px; } .fl { right: 3px; bottom: 2px; }
+.light .rk, .light .fl { color: var(--sq-dark); } .dark .rk, .dark .fl { color: var(--sq-light); }
+
+.pcw { position: absolute; inset: 2%; z-index: 3; pointer-events: none; }
+.pc { width: 100%; height: 100%; display: block; stroke-width: 1.6; stroke-linejoin: round; stroke-linecap: round; fill: var(--pf); stroke: var(--ps); }
+.pc.w { --pf: #f3ead5; --ps: #241812; } .pc.b { --pf: #2c2125; --ps: #e8dabc; }
+#board.face .pc.b { transform: rotate(180deg); }
+.sq.guilty .pcw { transform: translateY(-9%); }
+.sq.guilty .pc { filter: saturate(.35) brightness(.82); }
+.token {
+  position: absolute; left: 8%; right: 8%; bottom: 3%; height: 31%; border-radius: 50%; z-index: 2;
+  background: radial-gradient(ellipse at 50% 35%, #4d3131 0%, #1a1010 72%);
+  box-shadow: 0 0 0 1.5px var(--ember), 0 0 9px rgba(208, 74, 55, .55), 0 2px 5px rgba(0, 0, 0, .6);
+}
+.token.fresh { animation: drop .5s cubic-bezier(.2, .8, .2, 1); }
+@keyframes drop { from { transform: translateY(-70%) scale(1.6); opacity: 0 } to { transform: none; opacity: 1 } }
+.ripple { position: absolute; inset: 6%; border-radius: 50%; border: 3px solid var(--halo); z-index: 5; pointer-events: none; animation: rip .95s ease-out forwards; }
+@keyframes rip { from { transform: scale(.4); opacity: 1 } to { transform: scale(1.55); opacity: 0 } }
+
+.hint { position: absolute; inset: 0; z-index: 4; display: grid; place-items: center; pointer-events: none; }
+.hint::after { content: ""; border-radius: 50%; }
+.hint.quiet::after { width: 28%; height: 28%; background: rgba(20, 16, 14, .38); }
+.hint.cap::after { width: 90%; height: 90%; border: 4px solid rgba(208, 74, 55, .8); }
+.hint.abs::after { width: 46%; height: 46%; background: radial-gradient(circle, #fff3c8, var(--halo)); box-shadow: 0 0 12px 3px rgba(226, 182, 87, .85); }
+
+/* chronicle + action */
+#chron { flex: 1 1 0; min-height: 66px; overflow: hidden; padding: 8px 4px 2px; display: flex; flex-direction: column; gap: 4px; font-size: 13.5px; }
+.ln { color: #7d7266; display: flex; gap: 8px; align-items: baseline; }
+.ln:nth-child(n+4) { opacity: .6; } .ln:nth-child(n+6) { opacity: .35; }
+.ln:first-child { color: var(--bone); font-size: 15px; }
+.ln::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--line); flex: none; transform: translateY(-1px); }
+.ln.guilt::before { background: var(--ember); } .ln.abs::before { background: var(--halo); } .ln.check::before { background: #fff; }
+#act { min-height: 50px; display: flex; align-items: center; justify-content: center; padding: 2px 0; }
+.pill { min-height: 44px; padding: 0 18px; border-radius: 999px; border: 1px solid var(--halo); background: rgba(226, 182, 87, .12); color: var(--halo); font-weight: 600; font-size: 14px; }
+.pill[disabled] { border-color: var(--line); color: var(--ash); background: none; cursor: default; }
+.note { color: var(--ash); font-size: 13px; }
+
+#bar { margin-top: auto; display: grid; grid-template-columns: repeat(6, 1fr); border-top: 1px solid var(--line); padding-block: 4px; }
+#bar button { background: none; border: 0; min-height: 52px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; font-size: 11px; color: var(--ash); letter-spacing: .03em; border-radius: 10px; }
+#bar button:active { background: var(--panel); color: var(--bone); }
+#bar button[disabled] { opacity: .35; }
+#bar svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+
+/* sheets */
+.scrim { position: fixed; inset: 0; background: rgba(8, 5, 4, .62); z-index: 20; animation: fade .2s; }
+.sheet {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 21; max-height: 88%; overflow: auto;
+  max-width: 560px; margin: 0 auto; background: var(--panel); border-top: 1px solid var(--line);
+  border-radius: 20px 20px 0 0; animation: up .24s cubic-bezier(.2, .8, .2, 1);
+  padding: 8px max(20px, env(safe-area-inset-right, 0px)) calc(20px + env(safe-area-inset-bottom, 0px)) max(20px, env(safe-area-inset-left, 0px));
+}
+@keyframes up { from { transform: translateY(40px); opacity: 0 } }
+@keyframes fade { from { opacity: 0 } }
+.grab { width: 38px; height: 4px; border-radius: 4px; background: var(--line); margin: 4px auto 14px; }
+.sheet h2 { margin: 0 0 4px; font: 600 28px/1.1 var(--f-display); }
+.sheet h3 { margin: 18px 0 8px; font-size: 11px; letter-spacing: .12em; text-transform: uppercase; color: var(--ash); font-weight: 600; }
+.sheet p { margin: 6px 0; color: #cfc4af; }
+.sheet .lead { color: var(--bone); font-size: 16px; }
+.seg { display: flex; gap: 6px; }
+.seg button { flex: 1; min-height: 46px; border-radius: 11px; border: 1px solid var(--line); background: var(--panel-2); font-size: 14px; }
+.seg button[aria-pressed="true"] { background: var(--halo); color: #1b130d; border-color: var(--halo); font-weight: 600; }
+.row { display: flex; align-items: center; justify-content: space-between; min-height: 48px; gap: 12px; }
+.sw { width: 50px; height: 30px; border-radius: 15px; border: 1px solid var(--line); background: var(--panel-2); position: relative; flex: none; padding: 0; }
+.sw::after { content: ""; position: absolute; top: 3px; left: 3px; width: 22px; height: 22px; border-radius: 50%; background: var(--ash); transition: transform .15s; }
+.sw[aria-checked="true"] { background: var(--halo); border-color: var(--halo); }
+.sw[aria-checked="true"]::after { transform: translateX(20px); background: #1b130d; }
+.btns { display: flex; gap: 8px; margin-top: 20px; }
+.btn { flex: 1; min-height: 50px; border-radius: 12px; border: 1px solid var(--line); background: var(--panel-2); font-weight: 600; }
+.btn.primary { background: var(--halo); border-color: var(--halo); color: #1b130d; }
+.rules li { margin: 0 0 10px; color: #cfc4af; } .rules ol { padding-left: 20px; margin: 10px 0; }
+.rules b { color: var(--bone); }
+.rules .k { display: inline-block; width: 11px; height: 11px; border-radius: 50%; vertical-align: -1px; margin-right: 2px; }
+.promo { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-top: 14px; }
+.promo button { aspect-ratio: 1; border-radius: 14px; border: 1px solid var(--line); background: var(--sq-light); padding: 6px; }
+.promo .pc { width: 100%; height: 100%; }
+table.hist { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+.hist td { padding: 7px 4px; border-bottom: 1px solid var(--line); }
+.hist td:first-child { color: var(--ash); width: 34px; }
+.hist .g { color: #ff9d8e; } .hist .a { color: var(--halo); }
+.result { text-align: center; padding-top: 6px; }
+.result h2 { font-size: 36px; }
+
+@media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
+
+/* reactions: tokens, badges, dice */
+.sq.dev .pcw { transform: translateY(-6%) rotate(-17deg); }
+.sq.dev .pc { filter: grayscale(1) brightness(.7); }
+.sq.psy::before { content: ""; position: absolute; inset: 0; z-index: 1; background: radial-gradient(circle at 50% 55%, rgba(208, 74, 55, .38), transparent 70%); }
+.bdg { position: absolute; z-index: 6; display: grid; place-items: center; border-radius: 50%; pointer-events: none; font-weight: 700; line-height: 1; }
+.bdg.dv, .bdg.ps, .bdg.bl { top: 2%; right: 2%; width: 38%; height: 38%; background: #2a0f0d; color: #ffd9d2; box-shadow: 0 0 0 1.5px var(--ember); font-size: 12px; }
+.bdg.ps { font-family: var(--f-display); font-size: 14px; }
+.bdg.bl { animation: throb 1.4s ease-in-out infinite; }
+.bdg.bl svg { width: 62%; height: 62%; fill: var(--ember); }
+@keyframes throb { 50% { box-shadow: 0 0 0 1.5px var(--ember), 0 0 9px 2px rgba(208, 74, 55, .8); } }
+.bdg.sm { left: 3%; bottom: 3%; width: 34%; height: 34%; background: #2a0f0d; box-shadow: 0 0 0 1.5px #fff; }
+.bdg.sm svg { width: 74%; height: 74%; fill: none; stroke: #fff; stroke-width: 2; stroke-linejoin: round; }
+.bdg.sm circle { fill: #fff; stroke: none; }
+.bdg.fr { right: 3%; bottom: 3%; width: 34%; height: 34%; background: #1d1608; box-shadow: 0 0 0 1.5px var(--halo); }
+.bdg.fr svg { width: 66%; height: 66%; fill: var(--halo); }
+.ripple.bad { border-color: var(--ember); }
+#dice { position: absolute; left: 8px; right: 8px; top: 8px; z-index: 12; display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; padding: 8px; border-radius: 12px; background: rgba(20, 16, 14, .92); border: 1px solid var(--line); opacity: 0; transform: translateY(-6px); pointer-events: none; transition: opacity .2s, transform .2s; }
+#dice.on { opacity: 1; transform: none; pointer-events: auto; }
+#dice:empty { display: none; }
+.die { display: grid; grid-template-columns: 30px auto; grid-template-rows: auto auto; column-gap: 7px; align-items: center; min-width: 0; }
+.die svg { grid-row: 1 / 3; width: 30px; height: 30px; fill: var(--bone); }
+.die svg rect { fill: var(--bone); } .die svg circle { fill: var(--ink); }
+.die b { font-size: 13px; line-height: 1.1; } .die span { font-size: 12px; color: var(--halo); line-height: 1.1; }
+.die.more { display: flex; align-items: center; color: var(--ash); }
+.note.warn { color: #ff9d8e; }
+.dtab { width: 100%; border-collapse: collapse; margin: 6px 0 10px; font-size: 14px; }
+.dtab td { padding: 7px 4px; border-bottom: 1px solid var(--line); vertical-align: top; color: #cfc4af; }
+.dtab td:first-child { width: 46px; color: var(--halo); font-weight: 700; font-variant-numeric: tabular-nums; }
+
+/* tutorial */
+#tut { display: none; }
+body.tutorial #tut { display: block; flex: 1 1 0; min-height: 0; overflow: auto; padding: 6px 2px 0; }
+body.tutorial .strip, body.tutorial #chron, body.tutorial #bar { display: none; }
+.thead { display: flex; align-items: center; justify-content: space-between; gap: 10px; font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: var(--ash); }
+.thead button { min-height: 40px; padding: 0 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); font-size: 12px; letter-spacing: .06em; }
+.tdots { display: flex; gap: 5px; margin: 6px 0 10px; }
+.tdots i { flex: 1; height: 4px; border-radius: 2px; background: var(--line); }
+.tdots i.done { background: var(--ash); } .tdots i.now { background: var(--halo); }
+#tut .say { margin: 0 0 8px; font-size: 16px; line-height: 1.45; }
+#tut .after { margin: 0 0 8px; color: var(--halo); font-size: 15px; }
+#tut .tip { margin: 0 0 8px; color: #ff9d8e; font-size: 14px; }
+#tut h2 { margin: 0 0 4px; font: 600 26px/1.1 var(--f-display); }
+#tut p { color: #cfc4af; }
+#tut .btns { margin-top: 10px; }
+.sq.th::after { content: ""; position: absolute; inset: 0; z-index: 7; pointer-events: none; box-shadow: inset 0 0 0 3px var(--halo); animation: pulse 1.1s ease-in-out infinite; }
+@keyframes pulse { 50% { box-shadow: inset 0 0 0 5px var(--halo), inset 0 0 14px rgba(226, 182, 87, .7); } }
+.lessons { display: flex; flex-direction: column; gap: 6px; margin-top: 10px; }
+.lessons button { display: flex; align-items: center; gap: 12px; text-align: left; min-height: 56px; padding: 6px 12px; border-radius: 12px; border: 1px solid var(--line); background: var(--panel-2); }
+.lessons .num { flex: none; width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; background: var(--ink); color: var(--halo); font-weight: 700; font-size: 13px; }
+.lessons b { display: block; font-weight: 600; } .lessons small { color: var(--ash); font-size: 12.5px; }
+body.tutorial #tut { order: 1; }
+body.tutorial #act:empty { display: none; }
+
+#tut .said { margin: 0 0 8px; padding: 8px 10px; border-left: 2px solid var(--halo); background: rgba(226,182,87,.07); border-radius: 0 8px 8px 0; }
+#tut .said p { margin: 0 0 3px; font-size: 14px; line-height: 1.4; color: #e8dfcc; }
+#tut .said p:last-child { margin: 0; }
+#tut .tip2 { margin: 0 0 8px; font-size: 14px; color: #cfc4af; }
+
+#tut .btns { position: sticky; bottom: 0; background: var(--ink); padding: 8px 0 max(8px, env(safe-area-inset-bottom, 0px)); }
+
+.scrim.still, .sheet.still { animation: none; }
+
+.sheet { overscroll-behavior: contain; }
+.grab { position: relative; }
+.grab::after { content: ""; position: absolute; left: -60px; right: -60px; top: -10px; bottom: -14px; }
+
+</style>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false"><defs>
+  <symbol id="p1" viewBox="0 0 45 45">
+    <circle cx="22.5" cy="13" r="5.6"/>
+    <path d="M17 19.500c0 3 1.200 4.600 3 5.800-4.200 2-7.500 5.800-7.500 10.200h20c0-4.400-3.300-8.200-7.500-10.200 1.800-1.200 3-2.800 3-5.800z"/>
+    <path d="M11 40.500h23v-3.500c0-1-.8-1.800-1.800-1.800H12.800c-1 0-1.800.8-1.800 1.800z"/>
+  </symbol>
+  <symbol id="p2" viewBox="0 0 45 45">
+    <path d="M13 35.500c0-6.500 2.200-10.500 6.200-13.500-3 .4-5.600 2-8 4.600C9.500 27.500 8 26 8.200 24.200 8.500 22.500 12 16.500 15.800 12.500l.6-5.200 3.700 3.200c1.400-1.400 2.900-2 4.900-1.800 9.500 2.800 12.800 13.500 10.500 26.800z"/>
+    <path d="M16 13.500c1.800 3.500 1 6.500-2 9" fill="none"/>
+    <path d="M24.500 11c4.500 2 8 7.500 8.500 14" fill="none"/>
+    <circle cx="17.200" cy="16.800" r="1.200" style="fill:var(--ps);stroke:none"/>
+    <path d="M10.500 40.500h24v-3.500c0-1-.8-1.800-1.800-1.800H12.300c-1 0-1.800.8-1.800 1.800z"/>
+  </symbol>
+  <symbol id="p3" viewBox="0 0 45 45">
+    <circle cx="22.500" cy="7.500" r="2.800"/>
+    <path d="M22.500 10.500c-5.200 4.200-8.200 8.200-8.200 13 0 2.800 1.400 4.600 3.400 6h9.600c2-1.400 3.400-3.200 3.400-6 0-4.800-3-8.800-8.200-13z"/>
+    <path d="M19.800 21.500l5.800-6.400" fill="none"/>
+    <path d="M17 29.500h11c1 2.600 2.600 4.200 4.800 6H12.200c2.200-1.800 3.800-3.400 4.800-6z"/>
+    <path d="M10.500 40.500h24v-3.500c0-1-.8-1.800-1.800-1.800H12.300c-1 0-1.800.8-1.800 1.800z"/>
+  </symbol>
+  <symbol id="p4" viewBox="0 0 45 45">
+    <path d="M12 8h5v3.500h3.500V8h4V11.500H29V8h5v10H12z"/>
+    <path d="M14.500 18h16l1.800 17H12.700z"/>
+    <path d="M10.500 40.500h24v-3.500c0-1-.8-1.800-1.800-1.800H12.300c-1 0-1.800.8-1.800 1.800z"/>
+  </symbol>
+  <symbol id="p5" viewBox="0 0 45 45">
+    <path d="M11.500 35.500L7.500 15l7.500 10 .6-14 6.900 13 6.900-13 .6 14 7.500-10-4 20.500z"/>
+    <circle cx="7.500" cy="12.800" r="2.400"/><circle cx="15.500" cy="9.200" r="2.400"/><circle cx="22.500" cy="7.500" r="2.400"/>
+    <circle cx="29.500" cy="9.200" r="2.400"/><circle cx="37.500" cy="12.800" r="2.400"/>
+    <path d="M10.500 40.500h24v-3.500c0-1-.8-1.800-1.800-1.800H12.300c-1 0-1.800.8-1.800 1.800z"/>
+  </symbol>
+  <symbol id="p6" viewBox="0 0 45 45">
+    <path d="M20.800 2.200h3.400v3.200h3.200v3.400h-3.200V12h-3.400V8.800h-3.200V5.400h3.200z"/>
+    <path d="M22.500 12c-6.600 0-11.600 4.600-11.600 10.400 0 4.800 2.600 8.200 4.600 13.100h14c2-4.900 4.600-8.300 4.600-13.100 0-5.800-5-10.400-11.600-10.400z"/>
+    <path d="M14.800 24.500h15.400" fill="none"/>
+    <path d="M10.500 40.500h24v-3.500c0-1-.8-1.800-1.800-1.800H12.300c-1 0-1.800.8-1.800 1.800z"/>
+  </symbol>
+</defs></svg>
+
+<main id="app">
+  <header class="top">
+    <h1>Remorse Chess</h1>
+    <p class="tag">Every capture leaves a mark</p>
+  </header>
+  <section class="strip" id="stripTop"></section>
+  <div id="boardwrap"><div id="board" role="grid" aria-label="Chess board"></div><div id="dice" aria-live="polite"></div></div>
+  <section class="strip" id="stripBot"></section>
+  <section id="chron" aria-live="polite"></section>
+  <section id="tut" aria-live="polite"></section>
+  <div id="act"></div>
+  <nav id="bar" aria-label="Game controls">
+    <button data-act="undo" id="bUndo"><svg viewBox="0 0 24 24"><path d="M9 14 4 9l5-5"/><path d="M4 9h10.500a5.500 5.500 0 0 1 0 11H11"/></svg>Undo</button>
+    <button data-act="flip"><svg viewBox="0 0 24 24"><path d="M7 4v14M3.500 14.500 7 18l3.500-3.500M17 20V6M13.500 9.500 17 6l3.500 3.500"/></svg>Flip</button>
+    <button data-act="moves"><svg viewBox="0 0 24 24"><path d="M8 6h13M8 12h13M8 18h13M3.500 6h.01M3.500 12h.01M3.500 18h.01"/></svg>Moves</button>
+    <button data-act="new"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>New</button>
+    <button data-act="learn"><svg viewBox="0 0 24 24"><path d="M12 4 2.500 9 12 14l9.500-5z"/><path d="M6 11.500V16c0 1.500 2.700 3 6 3s6-1.500 6-3v-4.500"/></svg>Learn</button>
+    <button data-act="rules"><svg viewBox="0 0 24 24"><path d="M4 5.500C4 4.700 4.700 4 5.500 4H11v16H5.500c-.8 0-1.500-.7-1.500-1.500zM20 5.500c0-.8-.7-1.500-1.500-1.500H13v16h5.500c.8 0 1.500-.7 1.500-1.500z"/></svg>Rules</button>
+  </nav>
+</main>
+<div id="layer"></div>
+
+<script id="engine">
+/* Remorse Chess engine: the creator's official rules (Bardelo Bardalini, November 2026).
+ *
+ * config.guilt = false plays orthodox chess (used by the perft tests). With config.guilt = true:
+ *  - A piece's first capture rolls a d6 (seeded, so games replay exactly) and the reaction is permanent:
+ *      1 devastated (immobile, g=1, d=3: self-destructs after three of its owner's turns), 2-3 guilt-ridden
+ *      (pacifist: moves but cannot capture, so it neither attacks nor gives check), 4-5 unaffected, 6 berserk.
+ *  - Berserk: extra move (same piece) after a capture, no chaining. Third capture: bloodlust (it only moves
+ *    to capture, may take friendly pieces except the king). Berserkers cannot be absolved, shamed or rallied.
+ *  - Capturing a devastated piece is a mercy capture: the capturer is unaffected and nothing is counted.
+ *  - Kings are never affected by captures. Rally the Troops: a devastated or guilty piece next to its own
+ *    king is cleared at once.
+ *  - Knights make their first capture for free; the reaction is rolled on the second.
+ *  - Bishops never capture (pacifists all game). Capturing a bishop makes the capturer devastated
+ *    (berserkers and kings excepted).
+ *  - Absolution (passive): a friendly bishop next to a guilty or devastated piece clears it after one full turn.
+ *  - Shame (passive): a bishop next to an enemy piece shames it, one stage per full turn: guilty, devastated,
+ *    converted to the bishop's army (reborn: reaction rolled afresh, knight free capture restored).
+ *    Kings, bishops and berserkers are immune. A shamed piece next to its own bishop is protected.
+ *  - Promotion keeps the reaction and afflictions; a pawn that becomes a bishop is reborn and cleared.
+ */
+(function (root) {
+  'use strict';
+
+  const P = 1, N = 2, B = 3, R = 4, Q = 5, K = 6;
+  const config = { guilt: true, forced: null };
+  let EXPECT = false; // true inside search/legality: dice never consumed, neutral outcomes
+
+  const KN = [[-2, -1], [-2, 1], [-1, -2], [-1, 2], [1, -2], [1, 2], [2, -1], [2, 1]];
+  const KG = [[-1, -1], [-1, 0], [-1, 1], [0, -1], [0, 1], [1, -1], [1, 0], [1, 1]];
+  const DIAG = [[-1, -1], [-1, 1], [1, -1], [1, 1]];
+  const ORTH = [[-1, 0], [1, 0], [0, -1], [0, 1]];
+  const NEI = [];
+  for (let i = 0; i < 64; i++) {
+    const l = [];
+    for (const [dr, dc] of KG) { const r = (i >> 3) + dr, c = (i & 7) + dc; if (r >= 0 && r < 8 && c >= 0 && c < 8) l.push(r * 8 + c); }
+    NEI.push(l);
+  }
+  const CASTLE_KEEP = new Int8Array(64).fill(15);
+  CASTLE_KEEP[60] = 15 & ~3; CASTLE_KEEP[63] = 15 & ~1; CASTLE_KEEP[56] = 15 & ~2;
+  CASTLE_KEEP[4] = 15 & ~12; CASTLE_KEEP[7] = 15 & ~4; CASTLE_KEEP[0] = 15 & ~8;
+
+  /* ---------- state ---------- */
+  function blank(seed) {
+    return {
+      b: new Int8Array(64), g: new Uint8Array(64), d: new Uint8Array(64), r: new Uint8Array(64),
+      n: new Uint8Array(64), h: new Uint8Array(64), sh: new Uint8Array(64),
+      turn: 1, castle: 15, ep: -1, half: 0, full: 1, extra: -1, lost: 0,
+      seed: ((seed == null ? (Math.random() * 4294967295) : seed) >>> 0) || 1,
+    };
+  }
+  function initial(seed) {
+    const s = blank(seed), back = [R, N, B, Q, K, B, N, R];
+    for (let c = 0; c < 8; c++) { s.b[c] = -back[c]; s.b[8 + c] = -P; s.b[48 + c] = P; s.b[56 + c] = back[c]; }
+    return s;
+  }
+  function clone(s) {
+    return {
+      b: s.b.slice(), g: s.g.slice(), d: s.d.slice(), r: s.r.slice(), n: s.n.slice(), h: s.h.slice(), sh: s.sh.slice(),
+      turn: s.turn, castle: s.castle, ep: s.ep, half: s.half, full: s.full, extra: s.extra, lost: s.lost, seed: s.seed,
+    };
+  }
+  function fromFEN(fen, seed) {
+    const parts = fen.trim().split(/\s+/), s = blank(seed == null ? 12345 : seed);
+    const map = { p: P, n: N, b: B, r: R, q: Q, k: K };
+    let i = 0;
+    for (const ch of parts[0]) {
+      if (ch === '/') continue;
+      if (ch >= '1' && ch <= '8') { i += +ch; continue; }
+      const lower = ch.toLowerCase();
+      s.b[i++] = (ch === lower ? -1 : 1) * map[lower];
+    }
+    const cs = parts[2] || '-';
+    s.castle = (cs.includes('K') ? 1 : 0) | (cs.includes('Q') ? 2 : 0) | (cs.includes('k') ? 4 : 0) | (cs.includes('q') ? 8 : 0);
+    if (parts[3] && parts[3] !== '-') s.ep = (8 - +parts[3][1]) * 8 + (parts[3].charCodeAt(0) - 97);
+    s.turn = parts[1] === 'b' ? -1 : 1; s.half = +(parts[4] || 0); s.full = +(parts[5] || 1);
+    return s;
+  }
+  const sqName = (i) => String.fromCharCode(97 + (i & 7)) + (8 - (i >> 3));
+  const sqIndex = (n) => (8 - +n[1]) * 8 + (n.charCodeAt(0) - 97);
+
+  /* ---------- dice ---------- */
+  function roll(s) {
+    if (EXPECT) return -1;
+    if (config.forced && config.forced.length) return config.forced.shift();
+    let x = s.seed >>> 0;
+    x ^= x << 13; x >>>= 0; x ^= x >>> 17; x ^= x << 5; x >>>= 0;
+    s.seed = x || 1;
+    return ((s.seed >>> 8) % 6) + 1;
+  }
+
+  /* ---------- attacks ---------- */
+  // Is `sq` attacked by a colour-`by` piece that is able to capture (not guilty, not a bishop)?
+  function attacked(s, sq, by) {
+    const PAC = config.guilt; // bishops are pacifists, so they attack nothing
+    const b = s.b, g = s.g, r = sq >> 3, c = sq & 7;
+    const pr = r + (by === 1 ? 1 : -1);
+    if (pr >= 0 && pr < 8) {
+      if (c > 0) { const i = pr * 8 + c - 1; if (b[i] === by * P && !g[i]) return true; }
+      if (c < 7) { const i = pr * 8 + c + 1; if (b[i] === by * P && !g[i]) return true; }
+    }
+    for (let k = 0; k < 8; k++) {
+      const rr = r + KN[k][0], cc = c + KN[k][1];
+      if (rr < 0 || rr > 7 || cc < 0 || cc > 7) continue;
+      const i = rr * 8 + cc;
+      if (b[i] === by * N && !g[i]) return true;
+    }
+    const nb = NEI[sq];
+    for (let k = 0; k < nb.length; k++) { const i = nb[k]; if (b[i] === by * K && !g[i]) return true; }
+    for (let k = 0; k < 4; k++) {
+      let rr = r + DIAG[k][0], cc = c + DIAG[k][1];
+      while (rr >= 0 && rr < 8 && cc >= 0 && cc < 8) {
+        const i = rr * 8 + cc, v = b[i];
+        if (v !== 0) { if ((v === by * Q || (v === by * B && !PAC)) && !g[i]) return true; break; }
+        rr += DIAG[k][0]; cc += DIAG[k][1];
+      }
+    }
+    for (let k = 0; k < 4; k++) {
+      let rr = r + ORTH[k][0], cc = c + ORTH[k][1];
+      while (rr >= 0 && rr < 8 && cc >= 0 && cc < 8) {
+        const i = rr * 8 + cc, v = b[i];
+        if (v !== 0) { if ((v === by * R || v === by * Q) && !g[i]) return true; break; }
+        rr += ORTH[k][0]; cc += ORTH[k][1];
+      }
+    }
+    return false;
+  }
+  function kingSq(s, col) {
+    const want = col * K;
+    for (let i = 0; i < 64; i++) if (s.b[i] === want) return i;
+    return -1;
+  }
+  function inCheck(s, col) {
+    const k = kingSq(s, col);
+    return k >= 0 && attacked(s, k, -col);
+  }
+
+  /* ---------- move generation ---------- */
+  function mv(f, t, p, c, e, k) { return { f, t, p: p || 0, c: c || 0, e: e || 0, k: k || 0, fr: 0, s: 0 }; }
+
+  function gen(s, capsOnly) {
+    const b = s.b, g = s.g, col = s.turn, out = [], only = s.extra;
+    const useGuilt = config.guilt, dice = useGuilt;
+    for (let f = 0; f < 64; f++) {
+      const pc = b[f];
+      if (pc * col <= 0) continue;
+      if (only >= 0 && f !== only) continue;
+      if (dice && s.d[f]) continue; // devastated: immobile
+      const t = pc * col, r = f >> 3, c = f & 7;
+      const guilty = useGuilt && (g[f] === 1 || t === B); // guilt-ridden pieces and bishops cannot capture
+      const blood = dice && s.r[f] === 4 && s.n[f] >= 3;
+            const capture = (to, p, e) => {
+        const target = e ? P : Math.abs(b[to]);
+        const m = mv(f, to, p, target, e);
+        if (!e && b[to] * col > 0) m.fr = 1;
+        out.push(m);
+      };
+      if (t === P) {
+        const dir = col === 1 ? -1 : 1, start = col === 1 ? 6 : 1, promo = col === 1 ? 0 : 7;
+        const r1 = r + dir;
+        if (r1 < 0 || r1 > 7) continue;
+        const f1 = r1 * 8 + c;
+        if (!capsOnly && !blood && b[f1] === 0) {
+          if (r1 === promo) out.push(mv(f, f1, Q), mv(f, f1, R), mv(f, f1, B), mv(f, f1, N));
+          else {
+            out.push(mv(f, f1));
+            if (r === start && b[f1 + dir * 8] === 0) out.push(mv(f, f1 + dir * 8));
+          }
+        }
+        if (!guilty) {
+          for (let dc = -1; dc <= 1; dc += 2) {
+            const cc = c + dc;
+            if (cc < 0 || cc > 7) continue;
+            const to = r1 * 8 + cc, v = b[to];
+            const ok = (v * col < 0) || (blood && v * col > 0 && Math.abs(v) !== K);
+            if (ok) {
+              if (r1 === promo) { capture(to, Q); capture(to, R); capture(to, B); capture(to, N); }
+              else capture(to, 0);
+            } else if (to === s.ep && v === 0) capture(to, 0, 1);
+          }
+        }
+      } else if (t === N || t === K) {
+        const offs = t === N ? KN : KG;
+        for (let k = 0; k < 8; k++) {
+          const rr = r + offs[k][0], cc = c + offs[k][1];
+          if (rr < 0 || rr > 7 || cc < 0 || cc > 7) continue;
+          const to = rr * 8 + cc, v = b[to];
+          if (v === 0) { if (!capsOnly && !blood) out.push(mv(f, to)); }
+          else if (!guilty && (v * col < 0 || (blood && Math.abs(v) !== K))) capture(to, 0);
+        }
+        if (t === K && !capsOnly && !blood) {
+          const home = col === 1 ? 60 : 4;
+          if (f === home && !attacked(s, f, -col)) {
+            const ksBit = col === 1 ? 1 : 4, qsBit = col === 1 ? 2 : 8;
+            if ((s.castle & ksBit) && b[f + 1] === 0 && b[f + 2] === 0 && b[f + 3] === col * R &&
+              !attacked(s, f + 1, -col) && !attacked(s, f + 2, -col)) out.push(mv(f, f + 2, 0, 0, 0, 1));
+            if ((s.castle & qsBit) && b[f - 1] === 0 && b[f - 2] === 0 && b[f - 3] === 0 && b[f - 4] === col * R &&
+              !attacked(s, f - 1, -col) && !attacked(s, f - 2, -col)) out.push(mv(f, f - 2, 0, 0, 0, 2));
+          }
+        }
+      } else {
+        const dirs = t === B ? DIAG : t === R ? ORTH : null;
+        const n = dirs ? 4 : 8;
+        for (let k = 0; k < n; k++) {
+          const d = dirs ? dirs[k] : (k < 4 ? DIAG[k] : ORTH[k - 4]);
+          let rr = r + d[0], cc = c + d[1];
+          while (rr >= 0 && rr < 8 && cc >= 0 && cc < 8) {
+            const to = rr * 8 + cc, v = b[to];
+            if (v === 0) { if (!capsOnly && !blood) out.push(mv(f, to)); }
+            else {
+              if (!guilty && (v * col < 0 || (blood && Math.abs(v) !== K))) capture(to, 0);
+              break;
+            }
+            rr += d[0]; cc += d[1];
+          }
+        }
+      }
+    }
+    if (!capsOnly) {
+      if (only >= 0) { const m = mv(only, only); m.s = 1; out.push(m); }
+    }
+    return out;
+  }
+
+  /* ---------- applying moves ---------- */
+  const RULE = { DEV: 3 };
+  // every piece of the side that has a bishop-type healer next to it
+  function nextToBishop(b, i, col) {
+    const nb = NEI[i];
+    for (let k = 0; k < nb.length; k++) if (b[nb[k]] === col * B) return true;
+    return false;
+  }
+  function nextToKing(b, i, col) {
+    const nb = NEI[i];
+    for (let k = 0; k < nb.length; k++) if (b[nb[k]] === col * K) return true;
+    return false;
+  }
+
+  function apply(s, m) {
+    const n = clone(s), b = n.b, g = n.g, d = n.d, r = n.r, cn = n.n, h = n.h, sh = n.sh, col = s.turn, rules = config.guilt;
+    n.ep = -1; n.extra = -1;
+    let ev = null, grant = false;
+    const push = (x) => { (ev || (ev = [])).push(x); };
+    const clearAt = (i) => { b[i] = 0; g[i] = 0; d[i] = 0; r[i] = 0; cn[i] = 0; h[i] = 0; sh[i] = 0; };
+    const moveAt = (f, t) => { b[t] = b[f]; g[t] = g[f]; d[t] = d[f]; r[t] = r[f]; cn[t] = cn[f]; h[t] = h[f]; sh[t] = 0; clearAt(f); };
+    let wasDev = null;
+    if (rules) for (let i = 0; i < 64; i++) if (d[i] && b[i] * col > 0) (wasDev || (wasDev = [])).push(i);
+
+    if (m.s) {
+      n.half = s.half + 1;
+    } else {
+      const piece = b[m.f], pt = Math.abs(piece);
+      const capSq = m.e ? (m.f >> 3) * 8 + (m.t & 7) : m.t;
+      const victimDev = m.c && rules ? d[capSq] > 0 : false;
+      if (m.e) clearAt(capSq);
+      if (!m.e && Math.abs(b[m.t]) === K) n.lost = -col * 2; // king taken (e.g. on a berserker's extra move)
+      moveAt(m.f, m.t);
+      if (m.p) {
+        b[m.t] = col * m.p;
+        if (rules && m.p === B) { g[m.t] = 0; d[m.t] = 0; r[m.t] = 0; cn[m.t] = 0; h[m.t] = 0; push({ k: 'reborn', sq: m.t }); }
+      }
+      if (m.k === 1) moveAt(m.t + 1, m.t - 1); else if (m.k === 2) moveAt(m.t - 2, m.t + 1);
+      if (pt === P && (m.t - m.f === 16 || m.f - m.t === 16)) n.ep = (m.f + m.t) >> 1;
+      n.castle = s.castle & CASTLE_KEEP[m.f] & CASTLE_KEEP[m.t];
+      n.half = (pt === P || m.c) ? 0 : s.half + 1;
+
+      if (rules && m.c && pt !== K && m.p !== B) {
+        const cur = Math.abs(b[m.t]);                     // what the capturer is now (after promotion)
+        const berserk = r[m.t] === 4;
+        if (victimDev) {
+          push({ k: 'mercy', sq: m.t });                  // mercy capture: nothing happens to the capturer
+        } else if (m.c === B) {
+          if (berserk) { if (cn[m.t] < 255) cn[m.t]++; } // berserkers do not care
+          else { g[m.t] = 1; d[m.t] = RULE.DEV; push({ k: 'bishopTaken', sq: m.t }); }
+        } else if (cur === N && r[m.t] === 0 && !h[m.t]) {
+          h[m.t] = 1; push({ k: 'free', sq: m.t });       // a knight's first capture is free
+        } else {
+          if (cn[m.t] < 255) cn[m.t]++;
+          let rr = r[m.t];
+          if (rr === 0) {
+            const rv = roll(n);
+            rr = r[m.t] = rv < 0 ? 2 : rv === 1 ? 1 : rv <= 3 ? 2 : rv <= 5 ? 3 : 4;
+            push({ k: 'react', sq: m.t, roll: rv, res: rr });
+          }
+          if (rr === 1) { g[m.t] = 1; d[m.t] = RULE.DEV; push({ k: 'devastated', sq: m.t }); }
+          else if (rr === 2) g[m.t] = 1;
+        }
+        if (r[m.t] === 4 && !victimDev) {
+          if (cn[m.t] === 3) push({ k: 'bloodlust', sq: m.t });
+          if (s.extra < 0) grant = true;
+        }
+      }
+    }
+
+    if (grant && !n.lost) {
+      n.extra = m.t; n.turn = col;
+      if (ev) n.ev = ev;
+      const lm = legalMoves(n);
+      if (lm.length === 1) { // nothing useful to do with the extra move
+        const n2 = apply(n, lm[0]);
+        if (n2.ev || ev) n2.ev = (ev || []).concat(n2.ev || []);
+        return n2;
+      }
+      return n;
+    }
+
+    if (rules) {
+      // 1. the mover's devastated pieces count down
+      if (wasDev) {
+        for (const i of wasDev) {
+          if (d[i] > 0 && b[i] * col > 0) {
+            d[i]--;
+            if (d[i] === 0) { const t = Math.abs(b[i]); if (t === K && !n.lost) n.lost = col; push({ k: 'boom', sq: i, type: t }); clearAt(i); }
+          }
+        }
+      }
+      // 2. absolution: the other side's afflicted pieces next to one of its own bishops are cleared (one full turn has passed)
+      const opp = -col;
+      for (let i = 0; i < 64; i++) {
+        if (b[i] * opp > 0 && (g[i] || d[i]) && r[i] !== 4 && nextToBishop(b, i, opp)) {
+          g[i] = 0; d[i] = 0; push({ k: 'heal', sq: i });
+        }
+      }
+      // 3. shame: the mover's pieces that were already next to an enemy bishop advance one stage
+      for (let i = 0; i < 64; i++) {
+        if (b[i] * col <= 0 || !sh[i]) continue;
+        const t = Math.abs(b[i]);
+        if (t === K || t === B || r[i] === 4 || !nextToBishop(b, i, opp) || nextToBishop(b, i, col) || nextToKing(b, i, col)) { sh[i] = 0; continue; }
+        if (!g[i]) { g[i] = 1; push({ k: 'shame', sq: i, stage: 1 }); }
+        else if (!d[i]) { d[i] = RULE.DEV; push({ k: 'shame', sq: i, stage: 2 }); }
+        else {
+          b[i] = opp * t; g[i] = 0; d[i] = 0; r[i] = 0; cn[i] = 0; h[i] = 0; sh[i] = 0;
+          push({ k: 'convert', sq: i });
+        }
+      }
+      // 4. arm: the other side's pieces now next to one of the mover's bishops will be shamed after their next move
+      for (let i = 0; i < 64; i++) {
+        if (b[i] * opp <= 0) continue;
+        const t = Math.abs(b[i]);
+        sh[i] = (t !== K && t !== B && r[i] !== 4 && nextToBishop(b, i, col) && !nextToBishop(b, i, opp) && !nextToKing(b, i, opp)) ? 1 : 0;
+      }
+      // 5. Rally the Troops: afflicted pieces next to their own king are cleared at once
+      for (let i = 0; i < 64; i++) {
+        if (b[i] !== 0 && (g[i] || d[i]) && nextToKing(b, i, b[i] > 0 ? 1 : -1)) { g[i] = 0; d[i] = 0; push({ k: 'rally', sq: i }); }
+      }
+    }
+    if (col === -1) n.full = s.full + 1;
+    n.turn = -col;
+    if (ev) n.ev = ev;
+    return n;
+  }
+
+  function legalMoves(s) {
+    const prev = EXPECT; EXPECT = true;
+    try {
+      const col = s.turn, out = [];
+      if (s.lost) return out;
+      const all = gen(s, false);
+      for (let i = 0; i < all.length; i++) {
+        const n = apply(s, all[i]);
+        if (!inCheck(n, col)) out.push(all[i]);
+      }
+      return out;
+    } finally { EXPECT = prev; }
+  }
+
+  /* ---------- repetition / status ---------- */
+  function epUsable(s) {
+    if (s.ep < 0) return false;
+    const col = s.turn, r = s.ep >> 3, c = s.ep & 7;
+    const pr = r + (col === 1 ? 1 : -1);
+    for (let dc = -1; dc <= 1; dc += 2) {
+      const cc = c + dc;
+      if (cc < 0 || cc > 7) continue;
+      const i = pr * 8 + cc;
+      if (s.b[i] === col * P && !s.g[i]) return true;
+    }
+    return false;
+  }
+  function keyOf(s) {
+    let k = '', x = '';
+    for (let i = 0; i < 64; i++) {
+      k += String.fromCharCode(65 + (s.b[i] + 6) * 2 + s.g[i]);
+      if (config.guilt) x += String.fromCharCode(65 + (s.d[i] | (s.r[i] << 2) | (Math.min(s.n[i], 3) << 5)), 65 + (s.h[i] | (s.sh[i] << 1)));
+    }
+    return k + x + s.turn + s.castle + s.extra + (epUsable(s) ? s.ep : '-');
+  }
+  function insufficient(s) {
+    let minors = 0;
+    for (let i = 0; i < 64; i++) {
+      const v = Math.abs(s.b[i]);
+      if (v === 0 || v === K) continue;
+      if (v === N || v === B) minors++; else return false;
+    }
+    return minors <= 1;
+  }
+  function status(s, keys) {
+    if (s.lost) return { over: true, result: Math.abs(s.lost) === 2 ? 'checkmate' : 'remorse', winner: -Math.sign(s.lost), check: Math.abs(s.lost) === 2, moves: [] };
+    const moves = legalMoves(s);
+    const check = inCheck(s, s.turn);
+    if (moves.length === 0) {
+      return check ? { over: true, result: 'checkmate', winner: -s.turn, check: true, moves }
+                   : { over: true, result: 'stalemate', winner: 0, check: false, moves };
+    }
+    if (insufficient(s)) return { over: true, result: 'insufficient', winner: 0, check, moves };
+    if (s.half >= 100) return { over: true, result: 'fifty', winner: 0, check, moves };
+    if (keys) {
+      const k = keys[keys.length - 1];
+      let cnt = 0;
+      for (const x of keys) if (x === k) cnt++;
+      if (cnt >= 3) return { over: true, result: 'threefold', winner: 0, check, moves };
+    }
+    return { over: false, result: null, winner: 0, check, moves };
+  }
+
+  /* ---------- notation ---------- */
+  const LET = ['', '', 'N', 'B', 'R', 'Q', 'K'];
+  // `n` = the state produced by applying m (pass it to avoid re-rolling dice)
+  function notate(s, m, legal, n) {
+    if (m.s) return 'skip';
+    const piece = Math.abs(s.b[m.f]);
+    let txt;
+    if (m.k === 1) txt = 'O-O';
+    else if (m.k === 2) txt = 'O-O-O';
+    else {
+      txt = '';
+      if (piece === P) { if (m.c) txt += sqName(m.f)[0]; }
+      else {
+        txt += LET[piece];
+        let amb = false, sameFile = false, sameRank = false;
+        for (const o of legal) {
+          if (o === m || o.t !== m.t || o.f === m.f || o.s) continue;
+          if (Math.abs(s.b[o.f]) !== piece) continue;
+          amb = true;
+          if ((o.f & 7) === (m.f & 7)) sameFile = true;
+          if ((o.f >> 3) === (m.f >> 3)) sameRank = true;
+        }
+        if (amb) {
+          if (!sameFile) txt += sqName(m.f)[0];
+          else if (!sameRank) txt += sqName(m.f)[1];
+          else txt += sqName(m.f);
+        }
+      }
+      if (m.c) txt += 'x';
+      txt += sqName(m.t);
+      if (m.p) txt += '=' + LET[m.p];
+    }
+    if (!n) { const prev = EXPECT; EXPECT = true; n = apply(s, m); EXPECT = prev; }
+    const opp = -s.turn;
+    if (n.turn === opp && inCheck(n, opp)) txt += legalMoves(n).length ? '+' : '#';
+    return txt;
+  }
+
+  /* ---------- evaluation ---------- */
+  const VAL = [0, 100, 320, 300, 500, 900, 0];
+  const PST = {
+    1: [0, 0, 0, 0, 0, 0, 0, 0, 50, 50, 50, 50, 50, 50, 50, 50, 10, 10, 20, 30, 30, 20, 10, 10, 5, 5, 10, 25, 25, 10, 5, 5,
+      0, 0, 0, 20, 20, 0, 0, 0, 5, -5, -10, 0, 0, -10, -5, 5, 5, 10, 10, -20, -20, 10, 10, 5, 0, 0, 0, 0, 0, 0, 0, 0],
+    2: [-50, -40, -30, -30, -30, -30, -40, -50, -40, -20, 0, 0, 0, 0, -20, -40, -30, 0, 10, 15, 15, 10, 0, -30, -30, 5, 15, 20, 20, 15, 5, -30,
+      -30, 0, 15, 20, 20, 15, 0, -30, -30, 5, 10, 15, 15, 10, 5, -30, -40, -20, 0, 5, 5, 0, -20, -40, -50, -40, -30, -30, -30, -30, -40, -50],
+    3: [-20, -10, -10, -10, -10, -10, -10, -20, -10, 0, 0, 0, 0, 0, 0, -10, -10, 0, 5, 10, 10, 5, 0, -10, -10, 5, 5, 10, 10, 5, 5, -10,
+      -10, 0, 10, 10, 10, 10, 0, -10, -10, 10, 10, 10, 10, 10, 10, -10, -10, 5, 0, 0, 0, 0, 5, -10, -20, -10, -10, -10, -10, -10, -10, -20],
+    4: [0, 0, 0, 0, 0, 0, 0, 0, 5, 10, 10, 10, 10, 10, 10, 5, -5, 0, 0, 0, 0, 0, 0, -5, -5, 0, 0, 0, 0, 0, 0, -5,
+      -5, 0, 0, 0, 0, 0, 0, -5, -5, 0, 0, 0, 0, 0, 0, -5, -5, 0, 0, 0, 0, 0, 0, -5, 0, 0, 0, 5, 5, 0, 0, 0],
+    5: [-20, -10, -10, -5, -5, -10, -10, -20, -10, 0, 0, 0, 0, 0, 0, -10, -10, 0, 5, 5, 5, 5, 0, -10, -5, 0, 5, 5, 5, 5, 0, -5,
+      0, 0, 5, 5, 5, 5, 0, -5, -10, 5, 5, 5, 5, 5, 0, -10, -10, 0, 5, 0, 0, 0, 0, -10, -20, -10, -10, -5, -5, -10, -10, -20],
+    6: [-30, -40, -40, -50, -50, -40, -40, -30, -30, -40, -40, -50, -50, -40, -40, -30, -30, -40, -40, -50, -50, -40, -40, -30, -30, -40, -40, -50, -50, -40, -40, -30,
+      -20, -30, -30, -40, -40, -30, -30, -20, -10, -20, -20, -20, -20, -20, -20, -10, 20, 20, 0, 0, 0, 0, 20, 20, 20, 30, 10, 0, 0, 10, 30, 20],
+    7: [-50, -40, -30, -20, -20, -30, -40, -50, -30, -20, -10, 0, 0, -10, -20, -30, -30, -10, 20, 30, 30, 20, -10, -30, -30, -10, 30, 40, 40, 30, -10, -30,
+      -30, -10, 30, 40, 40, 30, -10, -30, -30, -10, 20, 30, 30, 20, -10, -30, -30, -30, 0, 0, 0, 0, -30, -30, -50, -30, -30, -30, -30, -30, -30, -50],
+  };
+  // Static evaluation, centipawns, from the side-to-move's point of view.
+  function evaluate(s) {
+    const b = s.b, g = s.g, rules = config.guilt;
+    let score = 0, nonPawn = 0;
+    const healer = [0, 0, 0];
+    for (let i = 0; i < 64; i++) {
+      const v = b[i];
+      if (v === 0) continue;
+      const t = Math.abs(v);
+      if (t !== P && t !== K) nonPawn += VAL[t];
+      if (t === B) healer[v > 0 ? 1 : 2]++;
+    }
+    const endgame = nonPawn <= 2600;
+    let bishopsW = 0, bishopsB = 0;
+    for (let i = 0; i < 64; i++) {
+      const v = b[i];
+      if (v === 0) continue;
+      const t = Math.abs(v), white = v > 0;
+      const idx = white ? i : i ^ 56;
+      let sc = VAL[t] + (t === K ? (endgame ? PST[7][idx] : PST[6][idx]) : PST[t][idx]);
+      if (t === B) {
+        if (white) bishopsW++; else bishopsB++;
+        if (rules) { // a bishop cannot capture, but it heals friends and shames enemies next to it
+          const nb = NEI[i];
+          for (let k = 0; k < nb.length; k++) {
+            const o = b[nb[k]];
+            if (o * v > 0 && (g[nb[k]] || s.d[nb[k]])) sc += 18;
+            else if (o * v < 0 && Math.abs(o) !== K && Math.abs(o) !== B && s.r[nb[k]] !== 4) sc += 14 + (g[nb[k]] ? 10 : 0) + (s.d[nb[k]] ? 30 : 0);
+          }
+        }
+      }
+      const haveAbs = healer[white ? 1 : 2] > 0;
+      if (rules) {
+        if (g[i] && t !== B) {
+          const base = t === K ? 10 : t === P ? 14 : VAL[t] * 0.18;
+          sc -= base * (haveAbs ? 0.6 : 1.4);
+        }
+        if (s.d[i]) sc -= (t === K ? 600 : VAL[t] * 0.6) * (haveAbs ? 0.6 : 1) + (3 - s.d[i]) * 40;
+        const rr = s.r[i];
+        if (rr === 4) sc += (s.n[i] >= 3 ? -30 : 45);
+        else if (rr === 3) sc += 12;
+        else if (rr === 1) sc -= VAL[t] * 0.08;
+        if (s.sh[i]) sc -= 10;
+      }
+      score += white ? sc : -sc;
+    }
+    if (bishopsW >= 2) score += 25;
+    if (bishopsB >= 2) score -= 25;
+    return s.turn === 1 ? score : -score;
+  }
+
+  /* ---------- search ---------- */
+  const INF = 1e9, MATE = 1e6;
+  let nodes = 0, deadline = 0, aborted = false;
+  const now = () => (typeof performance !== 'undefined' ? performance.now() : Date.now());
+
+  function orderScore(s, m) {
+    let sc = 0;
+    if (m.s) return -1;
+    if (m.c) sc += 10000 + VAL[m.c] * 10 - VAL[Math.abs(s.b[m.f])] - (m.fr ? 9000 : 0);
+    if (m.p) sc += 9000 + VAL[m.p];
+    if (!m.c && Math.abs(s.b[m.f]) === B) sc += 200;
+    return sc;
+  }
+  function sortMoves(s, moves) {
+    for (const m of moves) m.o = orderScore(s, m);
+    moves.sort((x, y) => y.o - x.o);
+    return moves;
+  }
+  const lostScore = (s, ply) => (Math.sign(s.lost) === s.turn ? -MATE + ply : MATE - ply);
+
+  function qsearch(s, alpha, beta, qd) {
+    if (s.lost) return lostScore(s, 0);
+    const stand = evaluate(s);
+    if (stand >= beta) return stand;
+    if (stand > alpha) alpha = stand;
+    if (qd >= 4) return alpha;
+    const col = s.turn;
+    const moves = sortMoves(s, gen(s, true));
+    for (let i = 0; i < moves.length; i++) {
+      if (moves[i].fr) continue;
+      const n = apply(s, moves[i]);
+      if (inCheck(n, col)) continue;
+      const sc = n.turn === col ? qsearch(n, alpha, beta, qd + 1) : -qsearch(n, -beta, -alpha, qd + 1);
+      if (sc >= beta) return sc;
+      if (sc > alpha) alpha = sc;
+    }
+    return alpha;
+  }
+
+  function negamax(s, depth, alpha, beta, ply) {
+    if ((++nodes & 1023) === 0 && now() > deadline) aborted = true;
+    if (aborted) return 0;
+    if (s.lost) return lostScore(s, ply);
+    if (s.half >= 100) return 0;
+    if (depth <= 0) return qsearch(s, alpha, beta, 0);
+    const col = s.turn;
+    const moves = sortMoves(s, gen(s, false));
+    let best = -INF, legal = 0;
+    for (let i = 0; i < moves.length; i++) {
+      const n = apply(s, moves[i]);
+      if (inCheck(n, col)) continue;
+      legal++;
+      const sc = n.turn === col ? negamax(n, depth - 1, alpha, beta, ply + 1) : -negamax(n, depth - 1, -beta, -alpha, ply + 1);
+      if (aborted) return 0;
+      if (sc > best) best = sc;
+      if (sc > alpha) alpha = sc;
+      if (alpha >= beta) break;
+    }
+    if (!legal) return inCheck(s, col) ? -MATE + ply : 0;
+    return best;
+  }
+
+  const LEVELS = {
+    1: { depth: 1, ms: 250, noise: 90 },
+    2: { depth: 3, ms: 700, noise: 12 },
+    3: { depth: 7, ms: 1800, noise: 3 },
+  };
+
+  // opts: { level, history: {key: count} }
+  function search(s, opts) {
+    const prevExpect = EXPECT; EXPECT = true;
+    try { return searchInner(s, opts || {}); } finally { EXPECT = prevExpect; }
+  }
+  function searchInner(s, opts) {
+    const lv = LEVELS[opts.level || 2];
+    const hist = opts.history || {};
+    const t0 = now();
+    deadline = t0 + lv.ms; aborted = false; nodes = 0;
+    const col = s.turn;
+    let roots = [];
+    for (const m of gen(s, false)) {
+      const n = apply(s, m);
+      if (inCheck(n, col)) continue;
+      m.n = n;
+      roots.push(m);
+    }
+    if (!roots.length) return { move: null, score: 0, depth: 0, nodes: 0 };
+    if (roots.length === 1) return { move: strip(roots[0]), score: 0, depth: 0, nodes: 0 };
+    sortMoves(s, roots);
+    for (const m of roots) m.rep = (hist[keyOf(m.n)] || 0) >= 2;
+
+    let best = roots[0], bestScore = -INF, doneDepth = 0;
+    for (let d = 1; d <= lv.depth; d++) {
+      let alpha = -INF;
+      const scored = [];
+      for (const m of roots) {
+        let sc;
+        if (m.rep) sc = 0;
+        else {
+          if (m.n.turn === col) sc = negamax(m.n, d - 1, lv.noise ? -INF : alpha, INF, 1);
+          else sc = -negamax(m.n, d - 1, -INF, lv.noise ? INF : -alpha, 1);
+          if (aborted) break;
+        }
+        const noisy = sc + (lv.noise ? (Math.random() * 2 - 1) * lv.noise : 0);
+        scored.push([m, sc, noisy]);
+        if (!lv.noise && sc > alpha) alpha = sc;
+      }
+      if (aborted) break;
+      scored.sort((a, b2) => b2[2] - a[2]);
+      best = scored[0][0]; bestScore = scored[0][1]; doneDepth = d;
+      roots = scored.map((x) => x[0]);
+      if (Math.abs(bestScore) > MATE - 100) break;
+      if (now() > deadline) break;
+    }
+    return { move: strip(best), score: bestScore, depth: doneDepth, nodes };
+  }
+  function strip(m) { return { f: m.f, t: m.t, p: m.p, c: m.c, e: m.e, k: m.k, fr: m.fr, s: m.s }; }
+
+  const api = {
+    P, N, B, R, Q, K, config, initial, blank, clone, fromFEN, sqName, sqIndex, gen, apply, legalMoves, inCheck, attacked,
+    kingSq, keyOf, status, notate, evaluate, search, insufficient, LEVELS, NEI,
+  };
+  root.Remorse = api;
+  if (typeof module !== 'undefined' && module.exports) module.exports = api;
+})(typeof self !== 'undefined' ? self : globalThis);
+
+</script>
+<script>
+(function () {
+  'use strict';
+  const E = window.Remorse;
+  const NAMES = ['', 'pawn', 'knight', 'bishop', 'rook', 'queen', 'king'];
+  const LEVELS = { 1: 'Novice', 2: 'Club', 3: 'Master' };
+  const SKEY = 'remorse-chess-v2', TKEY = 'remorse-chess-tut';
+  // Remorse Chess was created by someone else and is used with their universal permission to digitize it.
+  // They ask for credit somewhere in the project. Put their name or handle here to show it on the credits line.
+  const CREDIT_NAME = 'Bardelo Bardalini';
+  const $ = (s, r) => (r || document).querySelector(s);
+  const side = (c) => (c === 1 ? 'White' : 'Black');
+  const esc = (x) => String(x).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  const idx = E.sqIndex;
+
+  const app = {
+    settings: { mode: 'ai', human: 1, level: 2, haptics: true, hints: true, face: false },
+    seed: 1, states: [], keys: [], recs: [], plies: [], log: [],
+    view: 1, sel: -1, legal: [], status: null, thinking: false, token: 0, anim: null, fx: {},
+    tut: null, stash: null,
+  };
+  window.RemorseApp = app;
+  const cur = () => app.states[app.states.length - 1];
+
+  /* ---------- persistence ---------- */
+  function save() {
+    if (app.tut) return;
+    try { localStorage.setItem(SKEY, JSON.stringify({ s: app.settings, r: app.recs, v: app.view, seed: app.seed })); } catch (e) { /* storage unavailable */ }
+  }
+  function load() { try { const x = localStorage.getItem(SKEY); return x ? JSON.parse(x) : null; } catch (e) { return null; } }
+  function buzz(p) { if (app.settings.haptics && navigator.vibrate) { try { navigator.vibrate(p); } catch (e) { /* ignore */ } } }
+
+  /* ---------- game flow ---------- */
+  function reset() {
+    cancelAI();
+    const s = E.initial(app.seed);
+    app.states = [s]; app.keys = [E.keyOf(s)]; app.recs = []; app.plies = [];
+    app.sel = -1; app.legal = []; app.anim = null; app.fx = {};
+    app.status = E.status(s, app.keys);
+  }
+  function newGame(opts) {
+    Object.assign(app.settings, opts || {});
+    if (app.settings.human === 0) app.settings.human = Math.random() < 0.5 ? 1 : -1;
+    app.seed = ((Math.random() * 4294967295) >>> 0) || 1;
+    reset();
+    app.view = app.settings.mode === 'ai' ? app.settings.human : 1;
+    app.log = [{ k: 'info', t: 'The pieces take their places. White moves first.' }];
+    save(); render(); maybeAI();
+  }
+  function step(m, legal) {
+    const s = cur(), n = E.apply(s, m), san = E.notate(s, m, legal, n);
+    const evs = n.ev || [];
+    app.states.push(n); app.keys.push(E.keyOf(n)); app.recs.push([m.f, m.t, m.p || 0, m.s ? 1 : 0]);
+    app.plies.push({ san, color: s.turn, g: !!m.c && !!n.g[m.t], a: evs.some((e) => e.k === 'heal' || e.k === 'rally') });
+    return { s, n, san, evs };
+  }
+  function replay(recs) {
+    reset();
+    for (const r of recs) {
+      const legal = E.legalMoves(cur());
+      const m = legal.find((x) => x.f === r[0] && x.t === r[1] && x.p === (r[2] || 0) && x.s === (r[3] ? 1 : 0));
+      if (!m) return false;
+      step(m, legal);
+    }
+    app.status = E.status(cur(), app.keys);
+    return true;
+  }
+
+  function reactionLine(e, st) {
+    const piece = st.b[e.sq] || 0, nm = NAMES[Math.abs(piece)] || NAMES[e.type] || 'piece', at = E.sqName(e.sq);
+    const who = `The ${nm} on ${at}`;
+    switch (e.k) {
+      case 'react': return [
+        null,
+        { k: 'guilt', t: `Rolled 1. ${who} is devastated. A bishop must reach it within 3 turns.` },
+        { k: 'guilt', t: `Rolled ${e.roll}. ${who} is guilt-ridden: it cannot capture.` },
+        { k: 'info', t: `Rolled ${e.roll}. ${who} is unaffected.` },
+        { k: 'guilt', t: `Rolled 6. ${who} goes berserk.` },
+      ][e.res];
+      case 'devastated': return { k: 'guilt', t: `${who} is devastated again.` };
+      case 'mercy': return { k: 'info', t: `Mercy capture: the ${nm} on ${at} is unaffected.` };
+      case 'free': return { k: 'info', t: `${who} makes its free capture. No roll yet.` };
+      case 'bishopTaken': return { k: 'guilt', t: `${who} took a bishop and is devastated. A bishop must reach it within 3 turns.` };
+      case 'bloodlust': return { k: 'guilt', t: `${who} has taken three pieces. Bloodlust: it moves only to capture.` };
+      case 'reborn': return { k: 'abs', t: `${who} is a bishop, reborn and clean.` };
+      case 'heal': return { k: 'abs', t: `${who} is absolved.` };
+      case 'rally': return { k: 'abs', t: `The king rallies the ${nm} on ${at}. Its guilt is gone.` };
+      case 'shame': return { k: 'guilt', t: e.stage === 1 ? `${who} is shamed by a bishop and becomes guilt-ridden.` : `${who} is shamed further and is devastated.` };
+      case 'convert': return { k: 'guilt', t: `${who} has been converted and now fights for ${side(piece)}.` };
+      default: return null;
+    }
+  }
+  function diceItems(evs) {
+    const out = [], txt = ['', 'devastated', 'guilt-ridden', 'unaffected', 'berserk'];
+    for (const e of evs || []) if (e.k === 'react' && e.roll > 0) out.push({ roll: e.roll, label: E.sqName(e.sq), text: txt[e.res] });
+    return out;
+  }
+
+  function commit(m) {
+    const legal = app.status.moves;
+    const { s, n, evs } = step(m, legal);
+    const who = side(s.turn);
+    const mover = NAMES[Math.abs(s.b[m.f])];
+    const to = E.sqName(m.t);
+    const fixed = evs.filter((e) => e.k === 'heal' || e.k === 'rally').map((e) => e.sq);
+    const shamed = evs.filter((e) => e.k === 'shame' || e.k === 'convert').map((e) => e.sq);
+    app.sel = -1; app.legal = [];
+    app.anim = m.s ? null : { from: m.f, to: m.t };
+    app.fx = { guilt: m.c && n.g[m.t] ? m.t : -1, cleansed: fixed, shamed };
+    app.status = E.status(n, app.keys);
+
+    if (m.s) app.log.push({ k: 'info', t: `${who} skips the extra move.` });
+    else if (m.k) app.log.push({ k: 'info', t: `${who} castles ${m.k === 1 ? 'kingside' : 'queenside'}.` });
+    else if (m.c) {
+      let t = m.fr ? `${who} ${mover} turns on its own ${NAMES[m.c]} on ${to}` : `${who} ${mover} takes ${NAMES[m.c]} on ${to}`;
+      if (m.p) t += ` and promotes to a ${NAMES[m.p]}`;
+      app.log.push({ k: 'info', t: t + '.' });
+    } else app.log.push({ k: 'info', t: `${who} ${mover} to ${to}${m.p ? ', promoting to a ' + NAMES[m.p] : ''}.` });
+
+    const hadReact = new Set(evs.filter((e) => e.k === 'react').map((e) => e.sq));
+    for (const e of evs) {
+      if (e.k === 'devastated' && hadReact.has(e.sq)) continue;
+      if (e.k === 'boom') { app.log.push({ k: 'guilt', t: `The ${NAMES[e.type]} on ${E.sqName(e.sq)} could not live with itself and is gone.` }); continue; }
+      const l = reactionLine(e, n); if (l) app.log.push(l);
+    }
+    if (n.extra >= 0) app.log.push({ k: 'abs', t: `${who} moves again with the berserker.` });
+    const st = app.status;
+    if (st.over) {
+      app.log.push({ k: 'check', t: st.result === 'checkmate' ? `Checkmate. ${side(st.winner)} wins.` : 'Draw. ' + resultText(st.result) });
+    } else {
+      if (st.check) app.log.push({ k: 'check', t: `${side(n.turn)} is in check.` });
+      let k = 0;
+      for (let i = 0; i < 64 && k < 2; i++) if (n.d[i] && n.b[i] * n.turn > 0) {
+        app.log.push({ k: 'guilt', t: `${side(n.turn)}'s ${NAMES[Math.abs(n.b[i])]} on ${E.sqName(i)} self-destructs in ${n.d[i]} turn${n.d[i] > 1 ? 's' : ''} unless a bishop reaches it.` }); k++;
+      }
+    }
+    if (app.log.length > 80) app.log.splice(0, app.log.length - 80);
+
+    buzz(st.over ? [30, 50, 60] : st.check ? [25, 40, 25] : m.c ? [18, 30, 18] : fixed.length ? 35 : 10);
+    if (n.extra >= 0 && !aiToMove()) select(n.extra, true);
+    save(); render();
+    showDice(diceItems(evs));
+    if (st.over) { if (!app.tut) setTimeout(showResult, 800); } else maybeAI();
+  }
+  function resultText(r) {
+    return { stalemate: 'Stalemate: no legal move and no check.', insufficient: 'Neither side has enough material to mate.',
+      fifty: 'Fifty moves without a capture or pawn move.', threefold: 'The same position has occurred three times.',
+      checkmate: 'Checkmate.' }[r] || '';
+  }
+
+  function undo() {
+    cancelAI();
+    const ai = app.settings.mode === 'ai';
+    let poppedHuman = false;
+    const popOne = () => {
+      const p = app.plies[app.plies.length - 1];
+      if (p && p.color === app.settings.human) poppedHuman = true;
+      app.states.pop(); app.keys.pop(); app.recs.pop(); app.plies.pop();
+    };
+    if (!ai) popOne();
+    else do { popOne(); } while (app.states.length > 1 && !(poppedHuman && cur().turn === app.settings.human && cur().extra < 0));
+    app.sel = -1; app.legal = []; app.anim = null; app.fx = {};
+    app.status = E.status(cur(), app.keys);
+    app.log.push({ k: 'info', t: 'Move taken back.' });
+    if (cur().extra >= 0 && !aiToMove()) select(cur().extra, true);
+    save(); render(); maybeAI();
+  }
+
+  /* ---------- computer opponent ---------- */
+  let worker = null, workerOK = true, reqId = 0; const pending = {};
+  function getWorker() {
+    if (!workerOK) return null;
+    if (worker) return worker;
+    try {
+      const src = document.getElementById('engine').textContent;
+      const code = src + ';self.onmessage=function(e){var d=e.data;self.postMessage({id:d.id,r:Remorse.search(d.s,{level:d.level,history:d.history})});};';
+      worker = new Worker(URL.createObjectURL(new Blob([code], { type: 'text/javascript' })));
+      worker.onmessage = (e) => { const cb = pending[e.data.id]; delete pending[e.data.id]; if (cb) cb(e.data.r); };
+      worker.onerror = () => {
+        workerOK = false; worker = null;
+        Object.keys(pending).forEach((k) => { const cb = pending[k]; delete pending[k]; cb(null); });
+      };
+    } catch (e) { workerOK = false; worker = null; }
+    return worker;
+  }
+  function runSearch(s, level, history) {
+    return new Promise((resolve) => {
+      const fallback = () => setTimeout(() => resolve(E.search(s, { level, history })), 40);
+      const w = getWorker();
+      if (!w) return fallback();
+      const id = ++reqId;
+      pending[id] = (r) => (r ? resolve(r) : fallback());
+      w.postMessage({ id, s, level, history });
+    });
+  }
+  function cancelAI() {
+    app.token++; app.thinking = false;
+    if (worker) { try { worker.terminate(); } catch (e) { /* ignore */ } worker = null; }
+    Object.keys(pending).forEach((k) => delete pending[k]);
+  }
+  const aiToMove = () => app.settings.mode === 'ai' && cur().turn !== app.settings.human;
+  function maybeAI() {
+    if (app.tut || !aiToMove() || app.status.over) { renderStrips(); return; }
+    app.thinking = true; renderStrips();
+    const tok = ++app.token, t0 = performance.now(), s = cur(), hist = {};
+    for (const k of app.keys) hist[k] = (hist[k] || 0) + 1;
+    runSearch(s, app.settings.level, hist).then((res) => {
+      if (tok !== app.token) return;
+      setTimeout(() => {
+        if (tok !== app.token) return;
+        app.thinking = false;
+        const moves = app.status.moves;
+        let m = res && res.move && moves.find((x) => x.f === res.move.f && x.t === res.move.t && x.p === res.move.p && x.s === res.move.s);
+        if (!m) m = moves[Math.floor(Math.random() * moves.length)];
+        commit(m);
+      }, Math.max(0, 600 - (performance.now() - t0)));
+    });
+  }
+
+  /* ---------- input ---------- */
+  function play(m) { if (app.tut) tutPlay(m); else commit(m); }
+  function onSquare(i) {
+    if (app.thinking || app.status.over || aiToMove() || $('#layer').firstChild) return;
+    const s = cur(), pc = s.b[i];
+    if (app.sel >= 0) {
+      const cand = app.legal.filter((m) => m.t === i && !m.s);
+      if (cand.length) { if (cand[0].p) return promote(cand); return play(cand[0]); }
+    }
+    if (pc * s.turn > 0 && i !== app.sel) { if (s.extra >= 0 && i !== s.extra) return; select(i); }
+    else if (s.extra < 0) { app.sel = -1; app.legal = []; render(); }
+  }
+  // afflicted pieces of `col` that stand next to one of their own bishops (absolution is under way)
+  function healing(st, col) {
+    let k = 0;
+    for (let i = 0; i < 64; i++) {
+      if (st.b[i] * col <= 0 || !(st.g[i] || st.d[i]) || st.r[i] === 4) continue;
+      for (const j of E.NEI[i]) if (st.b[j] === col * E.B) { k++; break; }
+    }
+    return k;
+  }
+  function afflicted(st, col) { let k = 0; for (let i = 0; i < 64; i++) if (st.b[i] * col > 0 && (st.g[i] || st.d[i])) k++; return k; }
+  function select(i, quiet) {
+    const s = cur();
+    app.sel = i;
+    app.legal = app.status.moves.filter((m) => m.f === i);
+    const h0 = healing(s, s.turn), a0 = afflicted(s, s.turn);
+    for (const m of app.legal) {
+      m.abs = false;
+      if (m.c || m.s) continue;
+      const n = E.apply(s, m);
+      m.abs = healing(n, s.turn) > h0 || afflicted(n, s.turn) < a0;
+    }
+    if (!quiet) { buzz(6); render(); }
+  }
+
+  /* ---------- rendering ---------- */
+  function counts(color) {
+    const s = cur(); let bishops = 0, hurt = 0;
+    for (let i = 0; i < 64; i++) {
+      if (s.b[i] * color <= 0) continue;
+      if (s.g[i] || s.d[i]) hurt++;
+      if (Math.abs(s.b[i]) === E.B) bishops++;
+    }
+    return { bishops, hurt };
+  }
+  function stripHTML(color) {
+    const ai = app.settings.mode === 'ai';
+    let name, sub;
+    if (ai) { const me = color === app.settings.human; name = me ? 'You' : 'Computer'; sub = me ? side(color) : `${LEVELS[app.settings.level]} · ${side(color)}`; }
+    else { name = side(color); sub = ''; }
+    const { bishops, hurt } = counts(color);
+    const think = app.thinking && ai && color !== app.settings.human ? '<span class="think">thinking<i>.</i><i>.</i><i>.</i></span>' : '';
+    const warn = hurt > 0 && bishops === 0;
+    return `<span class="chip ${color === 1 ? 'w' : 'b'}"></span><span class="nm">${name}</span><span class="sub">${sub}</span>${think}
+      <span class="stats">${warn ? '<span class="st warn">no bishop</span>' : ''}
+      <span class="st" title="Bishops on the board"><svg class="mini" viewBox="0 0 45 45"><use href="#p3"/></svg>${bishops}</span>
+      <span class="st ${warn ? 'warn' : ''}" title="Guilt-ridden or devastated pieces"><i class="dot"></i>${hurt}</span></span>`;
+  }
+  function renderStrips() {
+    const top = -app.view, bot = app.view, s = cur(), live = !app.status.over;
+    const a = $('#stripTop'), b = $('#stripBot');
+    a.innerHTML = stripHTML(top); b.innerHTML = stripHTML(bot);
+    a.classList.toggle('on', live && s.turn === top); b.classList.toggle('on', live && s.turn === bot);
+  }
+  function tutHintSquares() {
+    if (!app.tut || app.tut.phase !== 'ask' || app.tut.complete || app.tut.dev) return [];
+    const ex = LESSONS[app.tut.li].steps[app.tut.si].expect;
+    if (!ex) return [];
+    return app.sel === idx(ex.f) ? [idx(ex.t)] : [idx(ex.f)];
+  }
+  function renderBoard() {
+    const s = cur(), el = $('#board'), v = app.view;
+    const last = app.recs.length ? app.recs[app.recs.length - 1] : null;
+    const kchk = app.status.check ? E.kingSq(s, s.turn) : -1;
+    const hints = new Map();
+    if (app.settings.hints && app.sel >= 0) for (const m of app.legal) if (!m.s) hints.set(m.t, m.c ? 'cap' : m.abs ? 'abs' : 'quiet');
+    const th = new Set(tutHintSquares());
+    const fx = app.fx || {};
+    let h = '';
+    for (let k = 0; k < 64; k++) {
+      const r = v === 1 ? k >> 3 : 7 - (k >> 3), c = v === 1 ? k & 7 : 7 - (k & 7), i = r * 8 + c;
+      const pc = s.b[i], guilty = pc !== 0 && s.g[i] === 1, dev = pc !== 0 && s.d[i] > 0;
+      const psy = pc !== 0 && s.r[i] === 4, blood = psy && s.n[i] >= 3;
+      const shame = pc !== 0 && s.sh[i] > 0, freeCap = pc !== 0 && Math.abs(pc) === E.N && s.r[i] === 0 && !s.h[i];
+      const cls = ['sq', (r + c) % 2 ? 'dark' : 'light'];
+      if (i === app.sel) cls.push('sel');
+      if (last && !last[3] && (i === last[1] || i === last[0])) cls.push('last');
+      if (i === kchk) cls.push('chk');
+      if (guilty) cls.push('guilty');
+      if (dev) cls.push('dev');
+      if (psy) cls.push('psy');
+      if (th.has(i)) cls.push('th');
+      const label = `${E.sqName(i)}${pc ? ' ' + (pc > 0 ? 'white' : 'black') + ' ' + NAMES[Math.abs(pc)] + (dev ? ', devastated' : guilty ? ', guilt-ridden' : '') + (blood ? ', bloodlust' : psy ? ', berserk' : '') + (shame ? ', about to be shamed' : '') + (freeCap ? ', free capture' : '') : ''}`;
+      h += `<div class="${cls.join(' ')}" data-i="${i}" role="gridcell" aria-label="${label}">`;
+      if (k % 8 === 0) h += `<span class="rk">${8 - r}</span>`;
+      if (k >> 3 === 7) h += `<span class="fl">${String.fromCharCode(97 + c)}</span>`;
+      if (guilty) h += `<i class="token${fx.guilt === i ? ' fresh' : ''}"></i>`;
+      if (pc) h += `<span class="pcw"><svg class="pc ${pc > 0 ? 'w' : 'b'}" viewBox="0 0 45 45"><use href="#p${Math.abs(pc)}"/></svg></span>`;
+      if (dev) h += `<span class="bdg dv" aria-hidden="true">${s.d[i]}</span>`;
+      else if (blood) h += '<span class="bdg bl" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 3c3 4.500 6 7.500 6 11a6 6 0 0 1-12 0c0-3.500 3-6.500 6-11z"/></svg></span>';
+      else if (psy) h += '<span class="bdg ps" aria-hidden="true">×2</span>';
+      if (shame) h += '<span class="bdg sm" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M1.500 12S5.500 5 12 5s10.500 7 10.500 7-4 7-10.500 7S1.500 12 1.500 12z"/><circle cx="12" cy="12" r="3.200"/></svg></span>';
+      if (freeCap) h += '<span class="bdg fr" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 2.500l2.900 6.300 6.800.7-5.100 4.600 1.500 6.700L12 17.200l-6.100 3.600 1.500-6.700L2.300 9.500l6.800-.7z"/></svg></span>';
+      if (fx.shamed && fx.shamed.includes(i)) h += '<i class="ripple bad"></i>';
+      if (hints.has(i)) h += `<i class="hint ${hints.get(i)}"></i>`;
+      if (fx.cleansed && fx.cleansed.includes(i)) h += '<i class="ripple"></i>';
+      h += '</div>';
+    }
+    el.innerHTML = h;
+    el.classList.toggle('face', app.settings.mode === 'two' && app.settings.face && !app.tut);
+    if (app.anim) {
+      const a = el.querySelector(`[data-i="${app.anim.from}"]`), w = el.querySelector(`[data-i="${app.anim.to}"] .pcw`);
+      if (a && w) {
+        const ra = a.getBoundingClientRect(), rb = w.parentElement.getBoundingClientRect();
+        w.style.transition = 'none'; w.style.zIndex = 6;
+        w.style.transform = `translate(${ra.left - rb.left}px,${ra.top - rb.top}px)`;
+        requestAnimationFrame(() => requestAnimationFrame(() => { w.style.transition = 'transform .18s ease-out'; w.style.transform = ''; }));
+      }
+    }
+    app.anim = null; app.fx = {};
+  }
+  function renderChron() {
+    $('#chron').innerHTML = app.log.slice(-8).reverse().map((l) => `<div class="ln ${l.k}">${esc(l.t)}</div>`).join('');
+  }
+  function renderAct() {
+    const s = cur(), a = $('#act');
+    a.innerHTML = '';
+    const mine = !aiToMove() && !app.status.over;
+    if (s.extra >= 0 && mine) {
+      a.innerHTML = '<button class="pill" id="skip">Skip the extra move</button>';
+    } else if (mine && !app.tut && app.sel < 0) {
+      let dv = -1;
+      for (let i = 0; i < 64; i++) if (s.d[i] && s.b[i] * s.turn > 0 && (dv < 0 || s.d[i] < s.d[dv])) dv = i;
+      const { hurt, bishops } = counts(s.turn);
+      if (dv >= 0) a.innerHTML = `<span class="note warn">Your ${NAMES[Math.abs(s.b[dv])]} on ${E.sqName(dv)} is devastated: ${s.d[dv]} turn${s.d[dv] > 1 ? 's' : ''} left. Put a bishop next to it.</span>`;
+      else if (hurt && bishops) a.innerHTML = '<span class="note">Keep a bishop next to a guilt-ridden piece for a full turn to absolve it.</span>';
+    }
+    const k = $('#skip'); if (k) k.onclick = () => { const m = app.status.moves.find((x) => x.s); if (m) play(m); };
+  }
+  function renderBar() { $('#bUndo').disabled = app.states.length < 2; }
+  function render() {
+    document.body.classList.toggle('tutorial', !!app.tut);
+    renderStrips(); renderBoard(); renderChron(); renderAct(); renderBar(); renderTut();
+  }
+
+  let diceTimer = 0;
+  function pips(n) {
+    const P = { 1: [[12, 12]], 2: [[7, 7], [17, 17]], 3: [[7, 7], [12, 12], [17, 17]], 4: [[7, 7], [17, 7], [7, 17], [17, 17]],
+      5: [[7, 7], [17, 7], [12, 12], [7, 17], [17, 17]], 6: [[7, 6.5], [17, 6.5], [7, 12], [17, 12], [7, 17.5], [17, 17.5]] }[n] || [];
+    return P.map(([x, y]) => `<circle cx="${x}" cy="${y}" r="2"/>`).join('');
+  }
+  function showDice(items) {
+    const el = $('#dice');
+    clearTimeout(diceTimer);
+    if (!items.length) { el.classList.remove('on'); return; }
+    el.innerHTML = items.slice(0, 6).map((i) => `<div class="die"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="1" y="1" width="22" height="22" rx="5"/>${pips(i.roll)}</svg><b>${i.label}</b><span>${i.text}</span></div>`).join('') +
+      (items.length > 6 ? `<div class="die more">+${items.length - 6}</div>` : '');
+    el.setAttribute('aria-label', 'Dice: ' + items.map((i) => `${i.label} rolled ${i.roll}, ${i.text}`).join('; '));
+    el.classList.add('on');
+    diceTimer = setTimeout(() => el.classList.remove('on'), 3200);
+  }
+
+  /* ---------- sheets ---------- */
+  function sheet(html, opts) {
+    const L = $('#layer');
+    const old = opts && opts.inPlace && $('.sheet', L);
+    const keep = old ? old.scrollTop : 0;
+    L.innerHTML = `<div class="scrim${old ? ' still' : ''}"></div><div class="sheet${old ? ' still' : ''}" role="dialog" aria-modal="true"><div class="grab"></div>${html}</div>`;
+    if (old) $('.sheet', L).scrollTop = keep;
+    $('.scrim', L).onclick = () => { if (!opts || !opts.sticky) closeSheet(); };
+    const sh = $('.sheet', L);
+    if (!opts || !opts.sticky) swipeToClose(sh, $('.scrim', L));
+    return sh;
+  }
+  // Pull the sheet down (from its handle, or from anywhere once it is scrolled to the top) to dismiss it.
+  function swipeToClose(sh, scrim) {
+    let y0 = 0, dy = 0, t0 = 0, armed = false, drag = false, grab = false;
+    sh.addEventListener('touchstart', (e) => {
+      if (e.touches.length !== 1) { armed = false; return; }
+      y0 = e.touches[0].clientY; dy = 0; t0 = e.timeStamp; drag = false;
+      grab = !!e.target.closest('.grab, h2');
+      armed = grab || sh.scrollTop <= 0;
+    }, { passive: true });
+    sh.addEventListener('touchmove', (e) => {
+      if (!armed) return;
+      const d = e.touches[0].clientY - y0;
+      if (!drag) {
+        if (d < -6) { armed = false; return; }
+        if (d < 8 || (!grab && sh.scrollTop > 0)) return;
+        drag = true; sh.style.transition = 'none'; sh.style.animation = 'none';
+      }
+      dy = Math.max(0, d);
+      e.preventDefault();
+      sh.style.transform = `translateY(${dy}px)`;
+      scrim.style.opacity = String(1 - Math.min(1, dy / 420) * 0.85);
+    }, { passive: false });
+    const end = (e) => {
+      if (!drag) return;
+      drag = false;
+      const v = dy / Math.max(1, e.timeStamp - t0);
+      if (dy > 110 || (v > 0.5 && dy > 40)) {
+        sh.style.transition = 'transform .18s ease-in'; sh.style.transform = 'translateY(105%)';
+        scrim.style.transition = 'opacity .18s'; scrim.style.opacity = '0';
+        buzz(8);
+        setTimeout(() => { if ($('#layer').contains(sh)) closeSheet(); }, 180);
+      } else {
+        sh.style.transition = 'transform .2s cubic-bezier(.2,.8,.2,1)'; sh.style.transform = '';
+        scrim.style.transition = 'opacity .2s'; scrim.style.opacity = '';
+      }
+    };
+    sh.addEventListener('touchend', end);
+    sh.addEventListener('touchcancel', end);
+  }
+  function closeSheet() { $('#layer').innerHTML = ''; }
+
+  function promote(cands) {
+    const col = cur().turn;
+    const sh = sheet(`<h2>Promote</h2><p>Choose the piece your pawn becomes.${cands[0].c ? ' It took a piece on the way.' : ''}</p>
+      <div class="promo">${[5, 4, 3, 2].map((p) => `<button data-p="${p}" aria-label="${NAMES[p]}"><svg class="pc ${col === 1 ? 'w' : 'b'}" viewBox="0 0 45 45"><use href="#p${p}"/></svg></button>`).join('')}</div>`);
+    sh.querySelectorAll('[data-p]').forEach((b) => (b.onclick = () => {
+      const m = cands.find((x) => x.p === +b.dataset.p); closeSheet(); play(m);
+    }));
+  }
+  function showResult() {
+    const st = app.status; if (!st.over) return;
+    const ai = app.settings.mode === 'ai';
+    let head, sub;
+    if (st.winner) {
+      head = ai ? (st.winner === app.settings.human ? 'You win' : 'Computer wins') : `${side(st.winner)} wins`;
+      sub = resultText(st.result);
+    } else { head = 'Draw'; sub = resultText(st.result); }
+    const sh = sheet(`<div class="result"><h2>${head}</h2><p class="lead">${sub}</p></div>
+      <div class="btns"><button class="btn" data-r="view">View board</button><button class="btn primary" data-r="again">Rematch</button></div>
+      <div class="btns" style="margin-top:8px"><button class="btn" data-r="new">New game…</button></div>`, { sticky: true });
+    sh.querySelector('[data-r=view]').onclick = closeSheet;
+    sh.querySelector('[data-r=again]').onclick = () => { closeSheet(); newGame({ human: ai ? -app.settings.human : 1 }); };
+    sh.querySelector('[data-r=new]').onclick = newSheet;
+  }
+  function newSheet() {
+    const d = Object.assign({}, app.settings);
+    d.pick = d.human === -1 ? -1 : 1;
+    let drawn = false;
+    function draw() {
+      const seg = (key, opts) => `<div class="seg">${opts.map(([v, l]) => `<button data-k="${key}" data-v="${v}" aria-pressed="${String(d[key] === v)}">${l}</button>`).join('')}</div>`;
+      const sw = (key, label) => `<div class="row"><span>${label}</span><button class="sw" role="switch" data-t="${key}" aria-checked="${String(!!d[key])}" aria-label="${label}"></button></div>`;
+      const sh = sheet(`<h2>New game</h2>
+        <h3>Opponent</h3>${seg('mode', [['ai', 'Computer'], ['two', 'Two players']])}
+        ${d.mode === 'ai' ? `<h3>You play</h3>${seg('pick', [[1, 'White'], [-1, 'Black'], [0, 'Random']])}<h3>Strength</h3>${seg('level', [[1, 'Novice'], [2, 'Club'], [3, 'Master']])}` : sw('face', 'Turn black’s pieces to face the other player')}
+        <h3>Options</h3>${sw('hints', 'Show move hints')}${sw('haptics', 'Vibration')}
+        <div class="btns"><button class="btn" id="nCancel">Cancel</button><button class="btn primary" id="nGo">Start game</button></div>`, { inPlace: drawn });
+      drawn = true;
+      sh.querySelectorAll('[data-k]').forEach((b) => (b.onclick = () => { d[b.dataset.k] = isNaN(+b.dataset.v) ? b.dataset.v : +b.dataset.v; draw(); }));
+      sh.querySelectorAll('[data-t]').forEach((b) => (b.onclick = () => { d[b.dataset.t] = !d[b.dataset.t]; draw(); }));
+      $('#nCancel').onclick = closeSheet;
+      $('#nGo').onclick = () => {
+        closeSheet();
+        const o = { mode: d.mode, level: d.level, hints: d.hints, haptics: d.haptics, face: d.face };
+        o.human = d.mode === 'ai' ? (d.pick == null ? 1 : d.pick) : 1;
+        newGame(o);
+      };
+    }
+    draw();
+  }
+  function creditLine() {
+    return `Remorse Chess is a chess variant ${CREDIT_NAME ? 'by <b>' + esc(CREDIT_NAME) + '</b>' : 'from the Remorse Chess video series'}. This digital version is made with the creator’s open permission to digitize it. Share what you make with <b>#remorsechess</b>.`;
+  }
+  function rulesSheet() {
+    const sh = sheet(`<h2>The rules</h2><div class="rules">
+      <p class="lead">Chess as usual, except that capturing changes a piece’s state of mind. Win by checkmate.</p>
+      <h3>The capture roll</h3>
+      <p>The first time a piece captures, roll a d6. Its reaction is permanent: it reacts the same way to every later capture.</p>
+      <table class="dtab">
+        <tr><td>1</td><td><b>Devastated.</b> Immobile, and it self-destructs after three of your turns unless a bishop reaches it.</td></tr>
+        <tr><td>2–3</td><td><b>Guilt-ridden.</b> A pacifist: it still moves, but can never capture.</td></tr>
+        <tr><td>4–5</td><td><b>Unaffected.</b></td></tr>
+        <tr><td>6</td><td><b>Berserk.</b> It gains an extra move after each capture.</td></tr>
+      </table>
+      <p>Guilt-ridden and devastated pieces never give check, but they can still block. Capturing a devastated piece is a <b>mercy capture</b>: the capturer is not affected.</p>
+      <h3>Bishops</h3>
+      <p><b>Absolution.</b> A bishop absolves every friendly guilt-ridden or devastated piece next to it, after one full turn. It is passive, so you still make a move every turn.</p>
+      <p><b>Shame.</b> A bishop also shames enemy pieces next to it. Each full turn, an enemy piece gets worse: guilt-ridden, then devastated, then <b>converted</b> to the bishop’s side. A converted piece is reborn and rolls again on its next capture. An enemy bishop next to the piece cancels the shame and heals it after a full turn.</p>
+      <p>Bishops are pacifists all game and never capture. Capturing a bishop makes the capturer devastated.</p>
+      <h3>Berserkers</h3>
+      <p>After a capture the piece moves again (two moves a turn at most). It cannot be absolved, shamed or rallied. After <b>three captures</b> it has <b>bloodlust</b>: it only moves to capture, and it may capture friendly pieces. It still gets its extra move, but that move must also be a capture.</p>
+      <h3>Exceptions</h3>
+      <ol>
+        <li><b>Kings</b> are never affected by capturing. Their passive <b>Rally the Troops</b> clears a guilt-ridden or devastated friendly piece next to the king at once.</li>
+        <li><b>Knights</b> get one free capture. They roll on their second.</li>
+        <li><b>Bishops</b> never capture. Berserkers ignore the bishop penalty.</li>
+        <li>A pawn that promotes keeps its reaction, unless it becomes a bishop, which is reborn clean.</li>
+      </ol>
+      <p class="note">Castling, en passant, stalemate, fifty moves and threefold repetition work as in chess. Gold dots show moves that start absolution. Red rings show captures. Badges: a number is a devastated countdown, ×2 is a berserker, a flame is bloodlust, an eye marks a piece a bishop will shame, and a star is a knight’s free capture.</p>
+      <h3>Credits</h3><p class="note">${creditLine()}</p></div>
+      <div class="btns"><button class="btn" id="rLearn">Take the tutorial</button><button class="btn primary" id="rClose">Got it</button></div>`);
+    $('#rClose').onclick = closeSheet;
+    $('#rLearn').onclick = tutorialSheet;
+  }
+  function movesSheet() {
+    let rows = '';
+    for (let i = 0; i < app.plies.length; i += 2) {
+      const cell = (p) => p ? `<td class="${p.g ? 'g' : p.a ? 'a' : ''}">${esc(p.san)}</td>` : '<td></td>';
+      rows += `<tr><td>${i / 2 + 1}.</td>${cell(app.plies[i])}${cell(app.plies[i + 1])}</tr>`;
+    }
+    sheet(`<h2>Moves</h2><p><span style="color:#ff9d8e">Red</span> moves left a guilty piece. <span style="color:var(--halo)">Gold</span> moves cleared one.</p>
+      ${rows ? `<table class="hist">${rows}</table>` : '<p class="note">No moves yet.</p>'}
+      <div class="btns"><button class="btn primary" id="mClose">Close</button></div>`);
+    $('#mClose').onclick = closeSheet;
+  }
+  function welcomeSheet() {
+    const sh = sheet(`<h2>Remorse Chess</h2><p class="lead">Chess where every capture changes the piece that made it.</p>
+      <p>New here? The tutorial takes a few minutes and plays out each rule on the board.</p>
+      <div class="btns"><button class="btn" id="wPlay">Play now</button><button class="btn primary" id="wLearn">Start tutorial</button></div>`, { sticky: true });
+    $('#wPlay').onclick = closeSheet;
+    $('#wLearn').onclick = () => { closeSheet(); tutStart(0); };
+    try { localStorage.setItem(TKEY, '1'); } catch (e) { /* ignore */ }
+    return sh;
+  }
+
+  /* ---------- tutorial ---------- */
+  const LESSONS = [
+    { title: 'The capture roll', blurb: 'Guilt and the pacifist rule',
+      setup: { fen: '4k3/8/2n5/3p4/4P3/8/8/4K3 w - - 0 1' }, steps: [
+        { say: 'Chess works as usual and you win by checkmate. The twist: the first time a piece captures, you roll a d6 for its reaction. 1 devastated, 2-3 guilt-ridden, 4-5 unaffected, 6 berserk. The reaction is permanent, and it applies to every later capture.' },
+        { say: 'Capture the pawn on d5. The die is rigged to a 3.', expect: { f: 'e4', t: 'd5' }, rolls: [3], after: 'Guilt-ridden. A dark token sits under the pawn.', reply: { f: 'e8', t: 'f7' } },
+        { select: 'd5', say: 'Tap the pawn. It still moves, but there is no capture ring on the knight at c6. A guilt-ridden piece is a pacifist: it can never capture, so it never gives check either. It can still block.' },
+      ] },
+    { title: 'Devastated', blurb: 'Roll a 1, then absolution',
+      setup: { fen: '4k3/8/8/3p4/4P3/8/8/4KB2 w - - 0 1' }, steps: [
+        { say: 'Capture on d5 again. This time the die is rigged to a 1.', expect: { f: 'e4', t: 'd5' }, rolls: [1], after: 'Devastated. The pawn cannot move, and if no bishop reaches it within 3 of your turns it self-destructs. The badge counts the turns left.', reply: { f: 'e8', t: 'e7' } },
+        { say: 'A bishop next to a guilty or devastated friend absolves it after one full turn. Move the bishop to c4.', expect: { f: 'f1', t: 'c4' }, after: 'The bishop is beside the pawn. Once your opponent has moved, a full turn has passed and the pawn is absolved.', reply: { f: 'e7', t: 'd8' } },
+        { say: 'The badge on d5 is gone. Absolution is passive, so you still moved a piece this turn, and one bishop absolves every afflicted friend around it at once.' },
+      ] },
+    { title: 'Mercy capture', blurb: 'Taking a devastated piece',
+      setup: { fen: '4k3/8/8/3p4/8/8/8/3RK3 w - - 0 1', d: { d5: 2 }, r: { d5: 1 } }, steps: [
+        { say: 'Black’s pawn on d5 is devastated and will self-destruct soon. It does not want to be on the board. Capture it with the rook.', expect: { f: 'd1', t: 'd5' }, after: 'A mercy capture. The rook is not affected and nothing is rolled. Its first real capture is still to come.', reply: { f: 'e8', t: 'e7' } },
+      ] },
+    { title: 'Bishops', blurb: 'Pacifists, and a heavy price',
+      setup: { fen: '4k3/8/b3p3/8/2B5/8/8/R3K3 w - - 0 1' }, steps: [
+        { select: 'c4', say: 'Bishops believe captures are abhorrent, so they are pacifists all game. There is no capture ring on the pawn on e6.' },
+        { say: 'Capturing a bishop casts a ton of guilt on the capturer. Take the bishop on a6 with your rook.', expect: { f: 'a1', t: 'a6' }, after: 'Devastated at once, with no roll. The rook is frozen and will self-destruct unless it is saved.', reply: { f: 'e8', t: 'e7' } },
+        { say: 'Send your own bishop to the rescue. Move it to b5, next to the rook.', expect: { f: 'c4', t: 'b5' }, after: 'After your opponent’s reply a full turn has passed and the rook is absolved.', reply: { f: 'e7', t: 'd7' } },
+      ] },
+    { title: 'Shame', blurb: 'Bishops turn enemy pieces',
+      setup: { fen: '4k3/8/8/3p4/8/8/8/4KB2 w - - 0 1' }, steps: [
+        { say: 'A bishop also shames enemy pieces next to it. Each full turn the piece gets worse. Move your bishop next to the pawn on d5: play c4.', expect: { f: 'f1', t: 'c4' }, after: 'The eye marks the pawn. Once its owner has moved, the shame begins.', reply: { f: 'e8', t: 'f7' } },
+        { say: 'The pawn is guilt-ridden now. Wait one turn: any quiet move will do, so play your king to e2.', expect: { f: 'e1', t: 'e2' }, after: 'One turn later the pawn will be devastated.', reply: { f: 'f7', t: 'g7' } },
+        { say: 'Devastated. One more turn, and the pawn will be converted. Move your king to e3.', expect: { f: 'e2', t: 'e3' }, after: 'Converted. The pawn changes sides and is reborn, so it rolls again on its first capture.', reply: { f: 'g7', t: 'h7' } },
+        { say: 'The pawn on d5 is yours now. Only an enemy bishop next to the pawn cancels the shame, healing it after one full turn. Kings, bishops and berserkers cannot be shamed.' },
+      ] },
+    { title: 'Berserk', blurb: 'Roll a 6',
+      setup: { fen: '4k3/8/8/p3p3/8/8/8/R3K3 w - - 0 1' }, steps: [
+        { say: 'Roll a 6 and the piece enjoys it: it moves again after every capture. Take the pawn on a5. The die is rigged to a 6.', expect: { f: 'a1', t: 'a5' }, rolls: [6], after: 'An extra move. Your turn is not over.' },
+        { say: 'Take the pawn on e5 too. A berserker gets two moves a turn at most, and it cannot be absolved, shamed or rallied.', expect: { f: 'a5', t: 'e5' }, after: 'Turn over. The berserk rook gives check.', reply: { f: 'e8', t: 'd7' } },
+      ] },
+    { title: 'Bloodlust', blurb: 'After three captures',
+      setup: { fen: '4k3/8/8/8/8/P7/8/R2nK3 w - - 0 1', r: { a1: 4 }, n: { a1: 3 } }, steps: [
+        { select: 'a1', say: 'A berserker that has taken three pieces is afflicted with bloodlust. This rook only moves to capture, and it will even take its own side. The rings show your pawn on a3 and the knight on d1.' },
+        { say: 'Capture the knight on d1.', expect: { f: 'a1', t: 'd1' }, after: 'The extra move must also be a capture. There is none, so it is skipped for you.', reply: { f: 'e8', t: 'e7' } },
+      ] },
+    { title: 'Kings', blurb: 'Rally the Troops',
+      setup: { fen: '4k3/8/8/8/7R/8/4K3/8 w - - 0 1', g: ['h4'], r: { h4: 2 } }, steps: [
+        { say: 'The king called for the battle, so captures never affect it. Your rook on h4 is guilt-ridden. Bring the king toward it: play Kf3.', expect: { f: 'e2', t: 'f3' }, reply: { f: 'e8', t: 'e7' } },
+        { say: 'Rally the Troops: a guilty or devastated piece next to its own king is cleared at once. Play Kg3, beside the rook.', expect: { f: 'f3', t: 'g3' }, after: 'The token is gone immediately. Berserkers are the one exception: the king cannot rally them.', reply: { f: 'e7', t: 'd7' } },
+      ] },
+    { title: 'Knights', blurb: 'One free capture',
+      setup: { fen: '4k3/8/1p6/3p4/8/2N5/8/4K3 w - - 0 1' }, steps: [
+        { say: 'Knights are combat trained. Their first capture is free: no roll. Take the pawn on d5. The star on the knight marks the free capture.', expect: { f: 'c3', t: 'd5' }, after: 'Free. The star is gone: the next capture rolls.', reply: { f: 'e8', t: 'f7' } },
+        { say: 'Now take the pawn on b6. The die is rigged to a 2.', expect: { f: 'd5', t: 'b6' }, rolls: [2], after: 'Guilt-ridden after the second capture.', reply: { f: 'f7', t: 'e7' } },
+      ] },
+    { title: 'Promotion', blurb: 'Reborn as a bishop',
+      setup: { fen: '7k/P7/8/8/8/8/8/4K3 w - - 0 1', g: ['a7'], r: { a7: 2 } }, steps: [
+        { say: 'A promoted pawn keeps its guilt, so a queen would stay guilt-ridden. A bishop is reborn clean. Promote on a8 and choose a bishop.', expect: { f: 'a7', t: 'a8', p: 3 }, after: 'Reborn. A fresh bishop with no guilt and no history.', reply: { f: 'h8', t: 'g7' } },
+      ] },
+  ];
+  app.LESSONS = LESSONS;
+
+  function mkState(setup) {
+    const s = E.fromFEN(setup.fen, 4242);
+    for (const q of setup.g || []) s.g[idx(q)] = 1;
+    for (const [q, n] of Object.entries(setup.d || {})) { s.g[idx(q)] = 1; s.d[idx(q)] = n; }
+    for (const [q, n] of Object.entries(setup.r || {})) s.r[idx(q)] = n;
+    for (const [q, n] of Object.entries(setup.n || {})) s.n[idx(q)] = n;
+    for (const q of setup.h || []) s.h[idx(q)] = 1;
+    return s;
+  }
+  function tutStart(li) {
+    closeSheet();
+    if (!app.tut) {
+      cancelAI();
+      app.stash = { states: app.states, keys: app.keys, recs: app.recs, plies: app.plies, log: app.log, status: app.status, view: app.view, settings: Object.assign({}, app.settings), seed: app.seed };
+    }
+    app.tut = { li, si: 0, phase: 'ask', tip: '', busy: false, complete: false, id: ((app.tut && app.tut.id) || 0) + 1 };
+    const L = LESSONS[li];
+    app.settings.mode = 'two'; app.settings.hints = true;
+    const s = mkState(L.setup);
+    app.states = [s]; app.keys = [E.keyOf(s)]; app.recs = []; app.plies = []; app.view = 1;
+    app.log = [{ k: 'info', t: L.title }]; app.status = E.status(s, app.keys);
+    showDice([]); tutEnterStep();
+  }
+  function tutExit(toNew) {
+    const st = app.stash;
+    if (st) {
+      app.states = st.states; app.keys = st.keys; app.recs = st.recs; app.plies = st.plies; app.log = st.log; app.status = st.status; app.view = st.view;
+      Object.assign(app.settings, st.settings); app.seed = st.seed;
+    }
+    app.tut = null; app.stash = null; app.sel = -1; app.legal = []; E.config.forced = null;
+    showDice([]); render(); maybeAI();
+    if (toNew) newSheet();
+  }
+  function tutStep() { return LESSONS[app.tut.li].steps[app.tut.si]; }
+  function tutEnterStep() {
+    const t = app.tut, step = tutStep();
+    t.tip = ''; t.busy = false; t.complete = false; t.phase = step.expect ? 'ask' : 'done';
+    t.dev = false; t.said = [];
+    t.snap = { states: app.states.slice(), keys: app.keys.slice(), recs: app.recs.slice(), plies: app.plies.slice(), log: app.log.slice(), view: app.view };
+    app.sel = -1; app.legal = [];
+    if (step.select) select(idx(step.select), true);
+    render();
+  }
+  function tutPlay(m) {
+    const t = app.tut, step = tutStep(), ex = step.expect;
+    if (t.busy) return;
+    const ok = !!ex && t.phase === 'ask' && !t.dev && m.f === idx(ex.f) && m.t === idx(ex.t) && (!ex.p || m.p === ex.p) && !!ex.s === !!m.s;
+    if (!ok) {
+      if (ex && t.phase !== 'ask') {               // scripted step already done: playing on means Continue
+        if (t.si + 1 < LESSONS[t.li].steps.length) { const si = t.si; tutNext(); if (app.tut && app.tut.si !== si) return tutPlay(m); return; }
+        return tutFree(m);
+      }
+      return tutFree(m);                           // anything else legal is a free move
+    }
+    E.config.forced = (step.rolls || []).slice();
+    commit(m);
+    E.config.forced = null;
+    t.phase = 'done'; t.tip = '';
+    if (step.reply) {
+      t.busy = true; const id = t.id, si = t.si;
+      setTimeout(() => {
+        if (!app.tut || app.tut.id !== id || app.tut.si !== si) return;
+        const r = step.reply;
+        const rm = app.status.moves.find((x) => x.f === idx(r.f) && x.t === idx(r.t) && (!r.p || x.p === r.p));
+        if (rm) { E.config.forced = (step.replyRolls || []).slice(); commit(rm); E.config.forced = null; }
+        app.tut.busy = false; renderTut();
+      }, 950);
+    }
+    renderTut();
+  }
+  function tutFree(m) {
+    const t = app.tut, from = app.log.length;
+    t.dev = true; t.tip = '';
+    cur().seed = ((Math.random() * 4294967295) >>> 0) || 1;   // real dice once you leave the script
+    E.config.forced = null;
+    commit(m);
+    const say = () => { t.said = app.log.slice(from).map((l) => l.t).slice(-5); };
+    say();
+    const id = t.id;
+    const replyLoop = () => {
+      if (!app.tut || app.tut.id !== id) return;
+      const s = cur();
+      if (app.status.over || s.turn !== -1) { t.busy = false; say(); renderTut(); return; }
+      t.busy = true; renderTut();
+      setTimeout(() => {
+        if (!app.tut || app.tut.id !== id) return;
+        const r = E.search(cur(), { level: 1, history: {} });
+        const mv = r && r.move && app.status.moves.find((x) => x.f === r.move.f && x.t === r.move.t && x.p === r.move.p && x.s === r.move.s);
+        commit(mv || app.status.moves[0]);
+        say(); replyLoop();
+      }, 700);
+    };
+    replyLoop();
+    renderTut();
+  }
+  function tutReset0() {   // restore the step's starting position without re-entering the step
+    const sn = app.tut.snap;
+    app.states = sn.states.slice(); app.keys = sn.keys.slice(); app.recs = sn.recs.slice(); app.plies = sn.plies.slice(); app.log = sn.log.slice(); app.view = sn.view;
+    app.status = E.status(cur(), app.keys); E.config.forced = null; app.tut.dev = false; showDice([]);
+  }
+  function tutReset() {
+    const t = app.tut; if (!t || !t.snap) return;
+    const sn = t.snap;
+    app.states = sn.states.slice(); app.keys = sn.keys.slice(); app.recs = sn.recs.slice(); app.plies = sn.plies.slice(); app.log = sn.log.slice(); app.view = sn.view;
+    app.status = E.status(cur(), app.keys); E.config.forced = null; t.id++;
+    showDice([]); tutEnterStep();
+  }
+  function tutNext() {
+    const t = app.tut; if (!t || t.busy) return;
+    if (t.dev) tutReset0();
+    if (t.si + 1 < LESSONS[t.li].steps.length) { t.si++; tutEnterStep(); }
+    else { t.complete = true; renderTut(); }
+  }
+  function renderTut() {
+    const el = $('#tut');
+    if (!app.tut) { el.innerHTML = ''; return; }
+    const t = app.tut, L = LESSONS[t.li], step = L.steps[t.si];
+    const dots = LESSONS.map((_, i) => `<i class="${i < t.li ? 'done' : i === t.li ? 'now' : ''}"></i>`).join('');
+    let body;
+    if (t.complete) {
+      const last = t.li === LESSONS.length - 1;
+      body = `<h2>${last ? 'That is everything' : 'Lesson complete'}</h2><p>${last ? 'You know every rule. Start a game and see what your pieces can live with.' : `Next: ${esc(LESSONS[t.li + 1].title)}.`}</p>
+        <div class="btns"><button class="btn" id="tAgain">Replay</button><button class="btn primary" id="tOnward">${last ? 'Start playing' : 'Next lesson'}</button></div>`;
+    } else {
+      const after = t.phase === 'done' && !t.dev && step.after ? `<p class="after">${esc(step.after)}</p>` : '';
+      const showNext = t.phase === 'done' && !t.busy;
+      const said = t.dev && t.said.length ? `<div class="said">${t.said.map((x) => `<p>${esc(x)}</p>`).join('')}</div>` : '';
+      const explore = t.dev ? `<p class="tip2">${t.busy ? 'The computer is replying…' : step.expect ? 'You stepped off the script, which is fine. Keep playing, or reset the step to get back to the lesson.' : 'Keep exploring. Continue picks the lesson back up.'}</p>` : '';
+      const btns = [];
+      if (showNext) btns.push('<button class="btn primary" id="tNext">Continue</button>');
+      if (t.dev && step.expect) btns.push('<button class="btn primary" id="tReset">Reset step</button>');
+      if (!showNext || t.dev) btns.push('<button class="btn" id="tAgain">Restart lesson</button>');
+      body = `<p class="say">${esc(step.say)}</p>${after}${said}${explore}
+        <div class="btns">${btns.join('')}</div>`;
+    }
+    el.innerHTML = `<div class="thead"><span>Lesson ${t.li + 1} of ${LESSONS.length} · ${esc(L.title)}</span><button id="tExit">Exit</button></div><div class="tdots">${dots}</div>${body}`;
+    const q = (id) => $(id, el);
+    if (q('#tExit')) q('#tExit').onclick = () => tutExit(false);
+    if (q('#tNext')) q('#tNext').onclick = tutNext;
+    if (q('#tReset')) q('#tReset').onclick = tutReset;
+    if (q('#tAgain')) q('#tAgain').onclick = () => tutStart(t.li);
+    if (q('#tOnward')) q('#tOnward').onclick = () => (t.li === LESSONS.length - 1 ? tutExit(true) : tutStart(t.li + 1));
+  }
+  function tutorialSheet() {
+    const sh = sheet(`<h2>Tutorial</h2><p>Each lesson sets up a position and suggests a move, but you can play anything legal: the computer answers with real dice. Reset the step to get back to the lesson.</p>
+      <div class="lessons">${LESSONS.map((l, i) => `<button data-l="${i}"><span class="num">${i + 1}</span><span><b>${esc(l.title)}</b><small>${esc(l.blurb)}</small></span></button>`).join('')}</div>
+      <div class="btns"><button class="btn" id="tuClose">Close</button><button class="btn primary" data-l="0">Start from lesson 1</button></div>`);
+    sh.querySelectorAll('[data-l]').forEach((b) => (b.onclick = () => tutStart(+b.dataset.l)));
+    $('#tuClose').onclick = closeSheet;
+  }
+
+  /* ---------- wiring ---------- */
+  function init() {
+    $('#board').addEventListener('click', (e) => { const q = e.target.closest('.sq'); if (q) onSquare(+q.dataset.i); });
+    $('#dice').addEventListener('click', () => $('#dice').classList.remove('on'));
+    $('#bar').addEventListener('click', (e) => {
+      const b = e.target.closest('button'); if (!b || b.disabled) return;
+      const a = b.dataset.act;
+      if (a === 'undo') undo();
+      else if (a === 'flip') { app.view = -app.view; save(); render(); }
+      else if (a === 'moves') movesSheet();
+      else if (a === 'new') newSheet();
+      else if (a === 'rules') rulesSheet();
+      else if (a === 'learn') tutorialSheet();
+    });
+    let seen = false;
+    try { seen = !!localStorage.getItem(TKEY); } catch (e) { seen = true; }
+    const saved = load();
+    if (saved && saved.s && Array.isArray(saved.r)) {
+      Object.assign(app.settings, saved.s);
+      delete app.settings.rules;
+      app.seed = saved.seed || 1;
+      if (replay(saved.r)) {
+        app.view = saved.v === -1 ? -1 : 1;
+        app.log = [{ k: 'info', t: saved.r.length ? 'Game resumed.' : 'The pieces take their places. White moves first.' }];
+        if (app.status.over) app.log.push({ k: 'check', t: app.status.winner ? `${side(app.status.winner)} wins. ${resultText(app.status.result)}` : 'Draw. ' + resultText(app.status.result) });
+        if (cur().extra >= 0 && !aiToMove()) select(cur().extra, true);
+        render(); maybeAI(); if (!seen) welcomeSheet(); return;
+      }
+    }
+    newGame({});
+    if (!seen) welcomeSheet();
+  }
+  init();
+})();
+
+</script>
+<style>:root{--gutter:6px;--sat:max(env(safe-area-inset-top,0px),var(--safe-area-inset-top,0px));--sab:max(env(safe-area-inset-bottom,0px),var(--safe-area-inset-bottom,0px));--sal:max(env(safe-area-inset-left,0px),var(--safe-area-inset-left,0px));--sar:max(env(safe-area-inset-right,0px),var(--safe-area-inset-right,0px))}#app{padding-top:calc(4px + var(--sat));padding-bottom:var(--sab);padding-left:max(var(--gutter),var(--sal));padding-right:max(var(--gutter),var(--sar))}.sheet{padding-bottom:calc(20px + var(--sab))}#tut .btns{padding-bottom:max(8px,var(--sab))}</style>
+<script>
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', function () {
+    navigator.serviceWorker.register('sw.js').catch(function () { /* offline cache unavailable */ });
+  });
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,19 @@
+{
+  "id": "./",
+  "name": "Remorse Chess",
+  "short_name": "Remorse Chess",
+  "description": "Chess where every capture leaves a mark on the piece that made it. Roll for guilt, devastation and berserk pieces, then win by checkmate.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#14100e",
+  "theme_color": "#14100e",
+  "lang": "en",
+  "categories": ["games", "entertainment"],
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
